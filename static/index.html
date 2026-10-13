@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MovieXFone</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header>
+    <h1>MovieXFone</h1>
+    <p class="tag">New York City showtimes, by voice.</p>
+    <p><span id="mode" class="pill">connecting</span> <span id="clock" class="pill"></span></p>
+  </header>
+  <main>
+    <section class="phone">
+      <div id="screen" class="screen" aria-live="polite"></div>
+      <div class="controls">
+        <button id="mic" type="button">Hold to talk</button>
+        <input id="text" type="text" maxlength="400" placeholder="What's playing near Union Square tonight?" autocomplete="off">
+        <button id="send" class="secondary" type="button">Ask</button>
+      </div>
+      <div id="cards" class="cards"></div>
+    </section>
+    <footer>
+      Times come from public theater feeds and are cached for about fifteen minutes.
+      MovieXFone does not sell tickets. Links go to the theater.
+    </footer>
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>

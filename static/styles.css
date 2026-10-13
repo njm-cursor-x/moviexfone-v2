@@ -1,0 +1,82 @@
+:root {
+  color-scheme: dark;
+  --ink: #f6e7c1;
+  --amber: #f0b429;
+  --amber-2: #c47b12;
+  --bg: #140c08;
+  --panel: #24160f;
+  --line: #5a3b22;
+  --good: #d7f3c8;
+  --mute: #b9a48a;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(1200px 500px at 50% -10%, #3a2414, transparent 60%),
+    var(--bg);
+  color: var(--ink);
+  font-family: Palatino, "Iowan Old Style", Georgia, serif;
+}
+header, main { width: min(880px, calc(100% - 32px)); margin: 0 auto; }
+header { padding: 28px 0 8px; }
+h1 {
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  font-size: 2.4rem;
+  margin: 0;
+  color: var(--amber);
+}
+.tag { color: var(--mute); margin: 6px 0 0; }
+.pill {
+  display: inline-block;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 4px 10px;
+  color: var(--amber);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+}
+.phone {
+  margin-top: 18px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 28px;
+  padding: 22px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+}
+.screen {
+  min-height: 180px;
+  background: #1a100b;
+  border-radius: 16px;
+  padding: 16px;
+  border: 1px solid #3d2818;
+}
+.who { color: var(--mute); font-family: ui-sans-serif, system-ui, sans-serif; font-size: 0.75rem; }
+.line { margin: 8px 0; line-height: 1.35; }
+.controls { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+button, input {
+  font: inherit;
+  color: var(--ink);
+  background: #1a100b;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 10px 16px;
+}
+button { background: var(--amber); color: #2a1604; border: 0; cursor: pointer; font-weight: 700; }
+button.secondary { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+input { flex: 1; min-width: 220px; }
+.cards { display: grid; gap: 10px; margin-top: 14px; }
+.card {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 12px 14px;
+  background: #1c120c;
+}
+.card h2 { margin: 0 0 4px; font-size: 1.15rem; }
+.meta { color: var(--mute); font-family: ui-sans-serif, system-ui, sans-serif; font-size: 0.85rem; }
+a { color: var(--amber); }
+footer { color: var(--mute); font-size: 0.85rem; padding: 18px 0 32px; }
+.err { color: #ffb4a2; }

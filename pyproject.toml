@@ -1,0 +1,68 @@
+[project]
+name = "moviexfone"
+version = "0.1.0"
+description = "NYC showtimes voice agent demo. The voice layer calls our backend; the backend owns the showtimes database."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.115.0",
+  "httpx>=0.27.0",
+  "pydantic>=2.9.0",
+  "uvicorn[standard]>=0.32.0",
+  "websockets>=13.0,<16",
+]
+
+[project.optional-dependencies]
+dev = [
+  "bandit>=1.8.0",
+  "mypy>=1.13.0",
+  "pip-audit>=2.7.0",
+  "pytest>=8.3.0",
+  "pytest-asyncio>=0.24.0",
+  "ruff>=0.8.0",
+]
+
+[project.scripts]
+moviexfone = "moviexfone.__main__:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+moviexfone = ["py.typed"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["B008", "E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["B011"]
+
+[tool.mypy]
+python_version = "3.12"
+mypy_path = "src"
+packages = ["moviexfone"]
+warn_return_any = true
+warn_unused_ignores = true
+disallow_untyped_defs = true
+check_untyped_defs = true
+no_implicit_optional = true
+strict_equality = true
+
+[tool.bandit]
+exclude_dirs = ["tests"]
+skips = ["B101"]
