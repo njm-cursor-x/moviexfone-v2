@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -11,9 +10,9 @@ from moviexfone.catalog import seed
 from moviexfone.config import Settings
 from moviexfone.db import Database
 from moviexfone.paths import data_dir
-from moviexfone.timeutil import NY
+from tests.clock import NOW
 
-NOW = datetime(2026, 10, 13, 15, 0, tzinfo=NY)
+__all__ = ["NOW"]
 
 
 @pytest.fixture

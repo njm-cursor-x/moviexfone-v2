@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from tests.conftest import NOW
-
 from moviexfone.db import Database
 from moviexfone.service import ask
+from tests.clock import NOW
 
 
 def _ask(db: Database, text: str) -> dict[str, object]:

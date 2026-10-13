@@ -4,11 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from tests.conftest import NOW
-
 from moviexfone.db import Database
 from moviexfone.service import ask
 from moviexfone.shaping import estimate_spoken_seconds
+from tests.clock import NOW
 
 
 def _run(db: Database, question: str) -> dict[str, Any]:
