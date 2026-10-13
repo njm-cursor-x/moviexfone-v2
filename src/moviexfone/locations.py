@@ -71,7 +71,10 @@ def score_place(query: str, alias: str) -> float:
     left_tokens = set(left.split())
     right_tokens = set(right.split())
     if left_tokens and left_tokens <= right_tokens:
-        return 0.8 + 0.15 * (len(left_tokens) / len(right_tokens))
+        cover = len(left_tokens) / len(right_tokens)
+        short = len(left_tokens) == 1 and len(left) < 8
+        if not short and cover >= 0.67:
+            return 0.8 + 0.15 * cover
     if right.startswith(left) and len(left) >= 4:
         return 0.86
     ratio = SequenceMatcher(None, left, right).ratio()
@@ -85,11 +88,41 @@ def resolve_location(
     *,
     geocode: Geocoder | None = None,
 ) -> Resolution:
+    folded = normalize_place(query)
+    if folded in {"new york", "nyc", "new york city"}:
+        return Resolution(
+            kind="not_found",
+            label="New York",
+            options=[],
+        )
+    exact_place_name = any(folded == normalize_place(place.name) for place in places)
+    if len(folded.split()) == 1 and len(folded) >= 4 and not exact_place_name:
+        mentions: list[tuple[str, str]] = []
+        for theater in theaters:
+            if theater.status != "open":
+                continue
+            blob = " ".join([theater.spoken_name, *theater.aliases])
+            if folded in set(normalize_place(blob).split()):
+                mentions.append(("theater", theater.spoken_name))
+        for place in places:
+            blob = " ".join([place.name, *place.aliases])
+            if folded in set(normalize_place(blob).split()):
+                mentions.append(("place", place.name))
+        mention_labels = {label for _kind, label in mentions}
+        mixed = any(kind == "place" for kind, _label in mentions) and any(
+            kind == "theater" for kind, _label in mentions
+        )
+        if mixed and len(mention_labels) >= 3:
+            return _ambiguous(sorted(mention_labels))
     scored: list[tuple[float, str, TheaterRef | PlaceRef]] = []
     for theater in theaters:
         if theater.status != "open":
             continue
-        names = [theater.name, theater.spoken_name, *theater.aliases]
+        names = [theater.spoken_name, *theater.aliases]
+        if "(" in query:
+            names.append(theater.name)
+        else:
+            names = [name for name in names if name and "(" not in name]
         score = max(score_place(query, name) for name in names if name)
         if score >= 0.8:
             scored.append((score, "theater", theater))
@@ -101,6 +134,15 @@ def resolve_location(
         return _from_geocode(query, geocode)
     scored.sort(key=lambda item: item[0], reverse=True)
     best = scored[0][0]
+    query_tokens = folded.split()
+    if len(query_tokens) == 1:
+        broad = [item for item in scored if item[0] >= 0.8]
+        broad_labels = {_label(item) for item in broad}
+        mixed = any(item[1] == "place" for item in broad) and any(
+            item[1] == "theater" for item in broad
+        )
+        if mixed and len(broad_labels) >= 3:
+            return _ambiguous(sorted(broad_labels))
     close = [item for item in scored if best - item[0] <= 0.08]
     theaters_close = [item for item in close if item[1] == "theater"]
     places_close = [item for item in close if item[1] == "place"]

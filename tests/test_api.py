@@ -95,4 +95,4 @@ def test_rate_limit(settings: Settings, monkeypatch: object) -> None:
         assert client.post("/v1/demo/ask", json={"text": "Times at Film Forum?"}).status_code == 200
         blocked = client.post("/v1/demo/ask", json={"text": "Times at Film Forum?"})
         assert blocked.status_code == 429
-        assert blocked.headers["retry-after"] == "30"
+        assert blocked.headers["retry-after"] == "60"

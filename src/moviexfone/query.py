@@ -127,6 +127,13 @@ def search_showtimes(
     when = _when_phrase(date_spoken, resolution, specific=movie_id is not None)
     max_cards = 2
     max_times = 3 if movie_id is not None else 2
+    oldest = min((row.fetched_at for row in matched), default=now)
+    caveat = staleness_phrase(oldest, now)
+    if caveat and "current times" in caveat:
+        payload = _payload(resolution, date_spoken, [], 0, caveat, oldest)
+        payload["coverage_note"] = caveat
+        payload["note"] = "Times are too old to read. Do not invent newer ones."
+        return payload
     chosen, more, speak = trim_cards(
         cards,
         page=page,
@@ -135,6 +142,7 @@ def search_showtimes(
         when=when,
         specific_movie=movie_id is not None,
         name_days=date_spoken == "this weekend",
+        prefix=caveat or "",
     )
     used = [
         row
@@ -143,12 +151,8 @@ def search_showtimes(
             row.theater_id == card.theater_id and row.movie_id == card.movie_id for card in chosen
         )
     ]
-    oldest = min((row.fetched_at for row in used), default=now)
-    caveat = staleness_phrase(oldest, now)
-    if caveat and "current times" in caveat:
-        speak = caveat
-    elif caveat:
-        speak = f"{caveat} {speak}".strip()
+    if used:
+        oldest = min(row.fetched_at for row in used)
     payload = _payload(resolution, date_spoken, chosen, more, speak, oldest)
     if not chosen:
         payload["note"] = "No further listings. Do not search again."
@@ -163,6 +167,9 @@ def get_movie_info(db: Database, movie: str) -> dict[str, Any]:
         return error
     row = db.query_one("SELECT * FROM movie WHERE movie_id = ?", (movie_id,))
     if row is None or title is None:
+        return {"error": "movie_not_found", "did_you_mean": [], "speak": "I don't have that title."}
+    title = sanitize_display(title, limit=120)
+    if not title:
         return {"error": "movie_not_found", "did_you_mean": [], "speak": "I don't have that title."}
     runtime = row["runtime_min"]
     rating = sanitize_display(row["rating"], limit=12)

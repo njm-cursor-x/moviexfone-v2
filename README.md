@@ -24,7 +24,7 @@ docker build -t moviexfone .
 docker run --rm -p 8000:8000 moviexfone
 ```
 
-Set `MOVIEXFONE_TOOL_SECRET` before you publish port 8000 beyond your own machine. The image binds `0.0.0.0` so Docker port mapping works, and it warns when the tool secret is unset.
+The image binds `0.0.0.0`. It refuses to start unless `MOVIEXFONE_TOOL_SECRET` is at least 16 bytes. Pass it at run time: `docker run --rm -p 8000:8000 -e MOVIEXFONE_TOOL_SECRET='a-long-random-string' moviexfone`.
 
 ## Architecture
 
@@ -80,15 +80,18 @@ Two ways in, one tool layer.
 ```bash
 export XAI_API_KEY='your key'
 export MOVIEXFONE_LIVE_VOICE=1
+export MOVIEXFONE_TOOL_SECRET='a-long-random-string'
 python -m moviexfone
 ```
 
-The key stays on the server. The page streams PCM to `ws://127.0.0.1:8000/ws/voice`, and the server opens `wss://api.x.ai/v1/realtime?model=grok-voice-think-fast-2.0`. The bridge:
+Live voice will not start without that secret. Open `http://127.0.0.1:8000/?token=a-long-random-string` so the page can send it on the socket. The page does not reconnect a live call by itself.
+
+The key stays on the server. The page streams 24 kHz PCM to `/ws/voice` and plays the reply audio. The server opens `wss://api.x.ai/v1/realtime?model=grok-voice-think-fast-2.0`. One live session at a time. The bridge:
 
 1. Collects every function call until `response.done`.
 2. Runs them and sends every `function_call_output`.
 3. Sends **one** `response.create`.
-4. Stops after **two** tool rounds and returns `tool_call_limit`.
+4. Stops after **two** tool rounds in one question, returns `tool_call_limit`, and the next `response.create` sets `tool_choice` to none. A new question gets a fresh budget.
 5. Does not say "let me check". If a tool takes longer than 700 ms it may say "One sec."
 
 If the key is missing or the socket fails, the page falls back to the demo voice. That fallback is what the automated tests exercise.
@@ -118,10 +121,10 @@ The eval is `pytest tests/test_eval.py`: 20 scripted caller questions against th
 
 - Tool parameters never become a URL. Outbound HTTP is an allowlist: `drafthouse.com`, `api.assemble.film`, `nitehawkcinema.com`, `geosearch.planninglabs.nyc`. Redirects are off.
 - A location that looks like a URL is not geocoded.
-- Ticket links are stored and returned. We do not fetch them.
+- Ticket links are stored only when the host is a known theater or chain. We do not fetch them.
 - Titles and blurbs are flattened to one line and stripped of instruction-shaped text before they enter `speak`.
 - Tool bodies are length-checked. `format` is an enum.
-- `/v1/tools/*` requires `X-MovieXFone-Secret` when `MOVIEXFONE_TOOL_SECRET` is set, and the comparison is a hash compare.
+- A bind other than localhost, and live voice on any bind, refuse to start unless `MOVIEXFONE_TOOL_SECRET` is at least 16 bytes. When a secret is set, tool routes require it. A remote `/ws/voice` client needs it too. The comparison is a hash compare. `X-Forwarded-For` is not trusted.
 - Demo and tool routes are rate-limited (default 60/minute per client IP, `Retry-After` on 429). `X-Forwarded-For` is ignored.
 - CORS allows the configured origins only, defaulting to localhost.
 - Logs pass through a redaction formatter for bearer tokens, `xai-…` keys, and the tool secret.

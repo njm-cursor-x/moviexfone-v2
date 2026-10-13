@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
+
+os.environ["MOVIEXFONE_TESTCLIENT"] = "1"
 
 import pytest
 

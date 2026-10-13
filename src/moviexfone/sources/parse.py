@@ -61,7 +61,18 @@ def _as_dt(value: str) -> datetime | None:
     except ValueError:
         return None
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=NY)
+        aware = parsed.replace(tzinfo=NY)
+        again = aware.astimezone(ZoneInfo("UTC")).astimezone(NY)
+        same = (
+            again.year,
+            again.month,
+            again.day,
+            again.hour,
+            again.minute,
+        ) == (parsed.year, parsed.month, parsed.day, parsed.hour, parsed.minute)
+        if not same:
+            return None
+        parsed = aware
     return parsed.astimezone(NY)
 
 

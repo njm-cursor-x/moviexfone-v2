@@ -123,6 +123,7 @@ def trim_cards(
     specific_movie: bool,
     second_budget: float = 10.5,
     name_days: bool = False,
+    prefix: str = "",
 ) -> tuple[list[ShowCard], int, str]:
     """Return the page of cards, how many remain, and a short `speak` line."""
     start = max(0, (page - 1) * max_cards)
@@ -132,7 +133,7 @@ def trim_cards(
     times = max_times
 
     def _speak(picked: list[ShowCard], remaining: int, limit: int) -> str:
-        return render_speak(
+        line = render_speak(
             picked,
             when=when,
             more=remaining,
@@ -140,6 +141,9 @@ def trim_cards(
             specific_movie=specific_movie,
             name_days=name_days,
         )
+        if prefix:
+            return f"{prefix} {line}".strip()
+        return line
 
     speak = _speak(chosen, more_after, times)
     if estimate_spoken_seconds(speak) > second_budget and times > 2:

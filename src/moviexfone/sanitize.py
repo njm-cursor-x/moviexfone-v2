@@ -5,14 +5,40 @@ from __future__ import annotations
 import re
 from urllib.parse import urlparse
 
+_INVISIBLE = re.compile(r"[\u200b\u200c\u200d\ufeff]")
 _INJECTION = re.compile(
-    r"(ignore\s+(all\s+|any\s+|the\s+)?(previous|prior|above)\s+instructions?"
-    r"|disregard\s+(all\s+|the\s+)?(previous|prior)\s+"
-    r"|you\s+are\s+now\s+"
+    r"(ignore\b.{0,40}\binstructions?"
+    r"|disregard\b"
+    r"|you\s+are\s+now\b"
+    r"|you\s+must\b"
     r"|system\s+prompt"
+    r"|tell\s+the\s+caller\b"
+    r"|<\s*/?\s*script\b"
     r"|<\s*/?\s*system\s*>"
-    r"|\[\[.*?\]\])",
+    r"|\[\[)",
     re.IGNORECASE,
+)
+_TICKET_HOSTS = (
+    "drafthouse.com",
+    "nitehawkcinema.com",
+    "amctheatres.com",
+    "regmovies.com",
+    "fandango.com",
+    "atomtickets.com",
+    "angelikafilmcenter.com",
+    "ifccenter.com",
+    "filmforum.org",
+    "metrograph.com",
+    "quadcinema.com",
+    "cinemavillage.com",
+    "film-linc.org",
+    "paristheaternyc.com",
+    "villageeast.com",
+    "thecinemasnewyork.com",
+    "cobblehillcinemas.com",
+    "alpinecinemas.com",
+    "citycinemas.com",
+    "landmarktheatres.com",
 )
 _BEARER = re.compile(r"Bearer\s+[A-Za-z0-9\-._~+/=]{6,}", re.IGNORECASE)
 _XAI_KEY = re.compile(r"xai-[A-Za-z0-9_\-]{8,}")
@@ -23,8 +49,18 @@ def sanitize_display(text: str | None, *, limit: int = 180) -> str:
     """Return a single-line display string safe to put in a tool payload."""
     if not text:
         return ""
-    cleaned = _CONTROL.sub(" ", text)
-    cleaned = _INJECTION.sub(" ", cleaned)
+    cleaned = _INVISIBLE.sub("", text)
+    cleaned = _CONTROL.sub(" ", cleaned)
+    cleaned = re.sub(r"<\s*script\b[^>]*>.*?</\s*script\s*>", " ", cleaned, flags=re.I | re.S)
+    cleaned = re.sub(r"<[^>]*>", " ", cleaned)
+    kept = [
+        part.strip()
+        for part in re.split(r"(?<=[.!?])\s+", cleaned)
+        if part.strip() and not _INJECTION.search(part)
+    ]
+    cleaned = " ".join(kept)
+    if not cleaned or _INJECTION.search(cleaned):
+        return ""
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
     if len(cleaned) > limit:
         cleaned = cleaned[: limit - 1].rstrip() + "…"
@@ -43,6 +79,9 @@ def sanitize_url(url: str | None) -> str | None:
         return None
     if parsed.username or parsed.password:
         return None
+    host = parsed.hostname.lower().rstrip(".")
+    if not any(host == allowed or host.endswith("." + allowed) for allowed in _TICKET_HOSTS):
+        return None
     return raw
 
 
@@ -51,6 +90,6 @@ def redact(text: str, secrets: list[str] | None = None) -> str:
     redacted = _BEARER.sub("Bearer [redacted]", text)
     redacted = _XAI_KEY.sub("xai-[redacted]", redacted)
     for secret in secrets or []:
-        if secret and len(secret) >= 6 and secret in redacted:
+        if secret and secret in redacted:
             redacted = redacted.replace(secret, "[redacted]")
     return redacted

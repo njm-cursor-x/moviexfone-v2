@@ -79,7 +79,8 @@ class ToolLoop:
             return []
         if kind == "input_audio_buffer.speech_started":
             self.rounds = 0
-            return []
+            self._pending = []
+            return [{"type": "response.cancel"}]
         if kind == "response.done":
             if not self._pending:
                 self._audio_bytes = 0
@@ -109,7 +110,10 @@ class ToolLoop:
         messages = [_output_message(call_id, result) for call_id, result in results]
         if had_audio and self.wait_playback is not None:
             await self.wait_playback()
-        messages.append({"type": "response.create"})
+        if self.rounds > self.max_rounds:
+            messages.append({"type": "response.create", "response": {"tool_choice": "none"}})
+        else:
+            messages.append({"type": "response.create"})
         return messages
 
     async def _run(

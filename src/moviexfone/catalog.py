@@ -45,6 +45,10 @@ def _screens(raw: str) -> int | None:
     return None
 
 
+# Fixture rows keep this stamp across reseeds. Live fetches pass the real fetch time.
+FIXTURE_FETCHED_AT = datetime(2026, 10, 13, 12, 0, tzinfo=NY)
+
+
 def seed(
     db: Database,
     data: Path,
@@ -57,29 +61,30 @@ def seed(
     Live mode must pass include_showtimes=False so sample times are never served
     as real listings.
     """
-    db.execute("DELETE FROM showtime")
-    db.execute("DELETE FROM movie_alias")
-    db.execute("DELETE FROM movie")
-    db.execute("DELETE FROM theater_alias")
-    db.execute("DELETE FROM theater")
-    theater_count = _load_theaters(db, data)
-    movie_count = _load_movies(db, data)
-    if include_showtimes:
-        shows = _fixture_shows(data)
-        _apply(db, shows["assemble"], mode="insert", now=now)
-        _apply(db, shows["nitehawk"], mode="dates", now=now)
-        _apply(db, shows["alamo"], mode="theaters", now=now)
-    _mark_coverage(db, now)
-    db.execute(
-        "INSERT INTO ingest_run (source, started_at, finished_at, ok, theaters, showtimes, error) VALUES (?, ?, ?, 1, ?, ?, NULL)",
-        (
-            "fixtures" if include_showtimes else "registry",
-            iso_ny(now),
-            iso_ny(now),
-            theater_count,
-            _show_count(db),
-        ),
-    )
+    with db.transaction():
+        db.execute("DELETE FROM showtime")
+        db.execute("DELETE FROM movie_alias")
+        db.execute("DELETE FROM movie")
+        db.execute("DELETE FROM theater_alias")
+        db.execute("DELETE FROM theater")
+        theater_count = _load_theaters(db, data)
+        movie_count = _load_movies(db, data)
+        if include_showtimes:
+            shows = _fixture_shows(data)
+            _apply(db, shows["assemble"], mode="insert", now=FIXTURE_FETCHED_AT)
+            _apply(db, shows["nitehawk"], mode="dates", now=FIXTURE_FETCHED_AT)
+            _apply(db, shows["alamo"], mode="theaters", now=FIXTURE_FETCHED_AT)
+        _mark_coverage(db, now)
+        db.execute(
+            "INSERT INTO ingest_run (source, started_at, finished_at, ok, theaters, showtimes, error) VALUES (?, ?, ?, 1, ?, ?, NULL)",
+            (
+                "fixtures" if include_showtimes else "registry",
+                iso_ny(now),
+                iso_ny(now),
+                theater_count,
+                _show_count(db),
+            ),
+        )
     return {"theaters": theater_count, "movies": movie_count, "showtimes": _show_count(db)}
 
 
@@ -218,19 +223,19 @@ def _apply(db: Database, rows: list[IncomingShow], *, mode: str, now: datetime) 
     kept = [row for row in resolved if row is not None]
     if kept and kept[0].source == "assemble":
         kept = [row for row in kept if not _alamo_owns(db, row.theater_id)]
-    if mode == "theaters":
-        ids = sorted({row.theater_id for row in kept})
-        _delete_theaters(db, ids)
-    elif mode == "dates":
-        for theater_id in {row.theater_id for row in kept}:
-            dates = sorted(
-                {
-                    business_date(row.starts_at).isoformat()
-                    for row in kept
-                    if row.theater_id == theater_id
-                }
-            )
-            _delete_dates(db, theater_id, dates)
+    if not kept:
+        return 0
+    # Replace only the movie-days in this payload. An Alamo page is authoritative
+    # for those films. A short Nitehawk page must not wipe other films.
+    groups = {
+        (row.theater_id, row.movie_id, business_date(row.starts_at).isoformat()) for row in kept
+    }
+    for theater_id, movie_id, day in groups:
+        db.execute(
+            """DELETE FROM showtime
+               WHERE theater_id = ? AND movie_id = ? AND business_date = ?""",
+            (theater_id, movie_id, day),
+        )
     fetched = iso_ny(now.astimezone(NY))
     payload = [
         (
@@ -512,9 +517,10 @@ def refresh_live(db: Database, *, now: datetime) -> dict[str, object]:
     report: dict[str, object] = {}
     try:
         rows = fetch_alamo()
-        count = _apply(db, rows, mode="theaters", now=now)
+        with db.transaction():
+            count = _apply(db, rows, mode="theaters", now=now)
+            record_ingest(db, source="alamo_json", now=now, ok=True, showtimes=count, error=None)
         report["alamo"] = count
-        record_ingest(db, source="alamo_json", now=now, ok=True, showtimes=count, error=None)
     except Exception as exc:
         log.warning("alamo refresh failed: %s", type(exc).__name__)
         report["alamo_error"] = type(exc).__name__
@@ -523,9 +529,12 @@ def refresh_live(db: Database, *, now: datetime) -> dict[str, object]:
         )
     try:
         rows = fetch_nitehawk()
-        count = _apply(db, rows, mode="dates", now=now)
+        with db.transaction():
+            count = _apply(db, rows, mode="dates", now=now)
+            record_ingest(
+                db, source="nitehawk_jsonld", now=now, ok=True, showtimes=count, error=None
+            )
         report["nitehawk"] = count
-        record_ingest(db, source="nitehawk_jsonld", now=now, ok=True, showtimes=count, error=None)
     except Exception as exc:
         log.warning("nitehawk refresh failed: %s", type(exc).__name__)
         report["nitehawk_error"] = type(exc).__name__

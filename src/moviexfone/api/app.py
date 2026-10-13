@@ -11,11 +11,13 @@ from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field, field_validator
 
+from moviexfone.api.models import AskIn, MovieIn, SearchIn
 from moviexfone.api.security import (
+    enforce_deployment,
     enforce_rate_limit,
     enforce_tool_secret,
+    local_hosts,
     voice_connection_allowed,
 )
 from moviexfone.catalog import seed
@@ -33,67 +35,10 @@ from moviexfone.voice.schemas import tool_schemas
 
 log = logging.getLogger(__name__)
 
-_FORMATS = {"any", "imax", "dolby", "3d", "70mm", "35mm"}
-
-
-class SearchIn(BaseModel):
-    location: str | None = Field(default=None, max_length=120)
-    movie: str | None = Field(default=None, max_length=160)
-    date: str | None = Field(default=None, max_length=40)
-    after_time: str | None = Field(default=None, max_length=8)
-    format: str = "any"
-    page: int = Field(default=1, ge=1, le=10)
-
-    @field_validator("location", "movie", "date", "after_time", mode="before")
-    @classmethod
-    def no_nulls(cls, value: object) -> str | None:
-        if value is None:
-            return None
-        if not isinstance(value, str):
-            value = str(value)
-        if "\x00" in value:
-            raise ValueError("invalid character")
-        text = value.strip()
-        return text or None
-
-    @field_validator("format", mode="before")
-    @classmethod
-    def known_format(cls, value: object) -> str:
-        if value is None or value == "":
-            return "any"
-        text = str(value).strip().lower()
-        if text not in _FORMATS:
-            raise ValueError("invalid format")
-        return text
-
-    @field_validator("page", mode="before")
-    @classmethod
-    def page_or_one(cls, value: object) -> int:
-        if value is None or value == "":
-            return 1
-        if isinstance(value, bool) or not isinstance(value, int | str):
-            raise ValueError("invalid page")
-        return int(value)
-
-
-class MovieIn(BaseModel):
-    movie: str = Field(min_length=1, max_length=160)
-
-    @field_validator("movie")
-    @classmethod
-    def no_nulls(cls, value: str) -> str:
-        if "\x00" in value:
-            raise ValueError("invalid character")
-        return value.strip()
-
-
-class AskIn(BaseModel):
-    text: str = Field(min_length=1, max_length=400)
-    page: int = Field(default=1, ge=1, le=10)
-
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings.from_env()
+    enforce_deployment(settings)
     secrets = [value for value in (settings.xai_api_key, settings.tool_secret) if value]
     configure_logging(secrets)
 
@@ -106,7 +51,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             from moviexfone.catalog import refresh_live
 
             refresh_live(db, now=now_ny())
-            refresher = AssembleRefresher(db)
+            refresher = AssembleRefresher(db, ttl_seconds=settings.assemble_ttl_seconds)
             refresher.start()
         app.state.db = db
         app.state.settings = settings
@@ -114,8 +59,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         from moviexfone.api.security import RateLimiter
 
         app.state.limiter = RateLimiter(settings.rate_limit_per_minute)
-        if settings.bind not in {"127.0.0.1", "localhost"} and not settings.tool_secret:
-            log.warning("tool endpoints are open and the server is not bound to localhost")
         log.info("ready voice_mode=%s live_data=%s", settings.voice_mode, settings.live_data)
         try:
             yield
@@ -220,7 +163,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         _: None = Depends(guarded),
         db: Database = Depends(db_dep),
     ) -> JSONResponse:
-        result = _search_from_body(db, body)
+        result = _search_from_body(db, body, settings)
+        refresher = getattr(app.state, "refresher", None)
+        if refresher is not None and body.movie:
+            refresher.consider(body.movie)
         return JSONResponse(result)
 
     @app.post("/v1/tools/get_movie_info")
@@ -264,16 +210,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ) -> JSONResponse:
         enforce_rate_limit(request)
         _require_demo_access(request, settings)
-        return JSONResponse(ask(db, body.text, now=now_ny(), page=body.page, geocode=_geocode))
+        return JSONResponse(
+            ask(db, body.text, now=now_ny(), page=body.page, geocode=geocode_for(settings))
+        )
 
     @app.post("/admin/refresh")
     def admin_refresh(request: Request, db: Database = Depends(db_dep)) -> dict[str, Any]:
+        enforce_rate_limit(request)
         enforce_tool_secret(request)
-        if (
-            settings.tool_secret is None
-            and request.client
-            and request.client.host not in {"127.0.0.1", "::1", "testclient"}
-        ):
+        host = request.client.host if request.client else None
+        if settings.tool_secret is None and host not in local_hosts():
             raise HTTPException(status_code=401, detail="unauthorized")
         summary: dict[str, Any] = dict(
             seed(db, settings.data_dir, now=now_ny(), include_showtimes=not settings.live_data)
@@ -302,7 +248,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     return app
 
 
-def _search_from_body(db: Database, body: SearchIn) -> dict[str, Any]:
+def _search_from_body(db: Database, body: SearchIn, settings: Settings) -> dict[str, Any]:
     now = now_ny()
     if not body.location:
         return {
@@ -321,7 +267,7 @@ def _search_from_body(db: Database, body: SearchIn) -> dict[str, Any]:
         page=body.page,
         now=now,
         date_spoken=spoken,
-        geocode=_geocode,
+        geocode=geocode_for(settings),
         date_unclear=unclear,
     )
 
@@ -332,6 +278,12 @@ def _geocode(text: str) -> dict[str, Any] | None:
     except Exception as exc:
         log.info("geosearch failed: %s", type(exc).__name__)
         return None
+
+
+def geocode_for(settings: Settings) -> Any:
+    if not settings.live_data:
+        return None
+    return _geocode
 
 
 def _require_demo_access(request: Request, settings: Settings) -> None:

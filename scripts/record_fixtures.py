@@ -22,7 +22,7 @@ def main() -> int:
     try:
         rows = fetch_alamo()
     except Exception as exc:
-        print(f"blocked: Alamo {ALAMO_URL} ({type(exc).__name__}: {exc})")
+        print(f"blocked: Alamo {ALAMO_URL} ({type(exc).__name__})")
         print("Assemble and Nitehawk are on the same restricted path from some networks.")
         print("The repo already contains synthetic fixtures dated 2026-10-13.")
         return 2

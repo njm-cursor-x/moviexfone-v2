@@ -4,7 +4,7 @@ MovieXFone's phone path is an xAI Voice Agent Builder agent. The agent does the 
 
 ## 1. Run the backend where Builder can reach it
 
-Builder calls the tools from xAI's network, so localhost is not enough for a phone number. For a local trial, use the browser demo instead (`python -m moviexfone`). When you expose the API, set a shared secret and bind it deliberately:
+Builder calls the tools from xAI's network, so localhost is not enough for a phone number. For a local trial, use the browser demo instead (`python -m moviexfone`). When you expose the API, set a shared secret of at least 16 bytes. The process exits if the bind is not localhost and the secret is missing or shorter:
 
 ```bash
 export MOVIEXFONE_TOOL_SECRET='a-long-random-string'

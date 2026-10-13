@@ -53,7 +53,8 @@ def score_title(query: str, candidate: str) -> float:
         ratio = max(ratio, 0.86)
     if left in right or right in left:
         contain = min(len(left), len(right)) / max(len(left), len(right))
-        ratio = max(ratio, 0.8 + 0.15 * contain)
+        if contain >= 0.75 and min(len(left), len(right)) >= 8:
+            ratio = max(ratio, 0.8 + 0.15 * contain)
     return ratio
 
 
@@ -92,8 +93,15 @@ def resolve_title(
         return None, []
     top = hits[0]
     second = hits[1].score if len(hits) > 1 else 0.0
-    if top.score >= 0.84 and top.score - second >= 0.04:
+    query_norm = normalize_title(query)
+    tokens = query_norm.split()
+    short = len(tokens) < 2 and len(query_norm) < 8
+    if top.score >= 0.99:
         return top, []
-    if top.score >= 0.9:
+    if short:
+        return None, [hit for hit in hits if hit.score >= 0.6]
+    if top.score >= 0.9 and top.score - second >= 0.04:
+        return top, []
+    if top.score >= 0.84 and len(tokens) >= 2 and top.score - second >= 0.08:
         return top, []
     return None, [hit for hit in hits if hit.score >= 0.6]

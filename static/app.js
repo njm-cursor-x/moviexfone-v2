@@ -144,7 +144,9 @@ function connect() {
     return;
   }
   const proto = location.protocol === "https:" ? "wss" : "ws";
-  socket = new WebSocket(`${proto}://${location.host}/ws/voice`);
+  const token = new URLSearchParams(location.search).get("token");
+  const auth = token ? `?token=${encodeURIComponent(token)}` : "";
+  socket = new WebSocket(`${proto}://${location.host}/ws/voice${auth}`);
   socket.onmessage = (event) => {
     const msg = JSON.parse(event.data);
     if (msg.type === "session.ready") {
@@ -194,8 +196,10 @@ function connect() {
   };
   socket.onclose = () => {
     stopMic();
-    if (!sessionWanted) {
+    if (!sessionWanted || mode === "live") {
+      sessionWanted = false;
       modeEl.textContent = "idle";
+      if (mode === "live") addLine("MovieXFone", "The line closed. Press Talk to start again.");
       return;
     }
     retries += 1;

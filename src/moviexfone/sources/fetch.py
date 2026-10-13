@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from typing import Any
 
 import httpx
@@ -89,6 +90,15 @@ def fetch_assemble_city(
     try:
         url = f"https://api.assemble.film/films/{tmdb_id}/screenings"
         response = http.get(url, params={"city": city_slug}, max_bytes=2_000_000)
+        if response.status_code == 429:
+            retry = response.headers.get("Retry-After", "5")
+            try:
+                delay = min(60, max(0, int(retry)))
+            except ValueError:
+                delay = 5
+            log.info("assemble retry-after=%s city=%s", delay, city_slug)
+            time.sleep(delay)
+            response = http.get(url, params={"city": city_slug}, max_bytes=2_000_000)
         if response.status_code != 200:
             log.info("assemble status=%s city=%s", response.status_code, city_slug)
             return {}

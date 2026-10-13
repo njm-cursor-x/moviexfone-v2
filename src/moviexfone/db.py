@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import sqlite3
 import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -82,26 +84,45 @@ class Database:
     def __init__(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         self.path = path
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
+        self._in_tx = False
         self._conn = sqlite3.connect(path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA foreign_keys = ON")
         self._conn.execute("PRAGMA journal_mode = WAL")
+        self._conn.execute("PRAGMA busy_timeout = 5000")
         self._conn.executescript(SCHEMA)
 
     def close(self) -> None:
         with self._lock:
             self._conn.close()
 
+    @contextmanager
+    def transaction(self) -> Iterator[None]:
+        """One immediate transaction. A reader cannot see a half-applied seed."""
+        with self._lock:
+            self._conn.execute("BEGIN IMMEDIATE")
+            self._in_tx = True
+            try:
+                yield
+                self._conn.commit()
+            except Exception:
+                self._conn.rollback()
+                raise
+            finally:
+                self._in_tx = False
+
     def execute(self, sql: str, params: tuple[Any, ...] = ()) -> None:
         with self._lock:
             self._conn.execute(sql, params)
-            self._conn.commit()
+            if not self._in_tx:
+                self._conn.commit()
 
     def executemany(self, sql: str, rows: list[tuple[Any, ...]]) -> None:
         with self._lock:
             self._conn.executemany(sql, rows)
-            self._conn.commit()
+            if not self._in_tx:
+                self._conn.commit()
 
     def query(self, sql: str, params: tuple[Any, ...] = ()) -> list[sqlite3.Row]:
         with self._lock:

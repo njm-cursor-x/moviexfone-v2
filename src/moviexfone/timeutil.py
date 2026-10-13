@@ -269,7 +269,9 @@ def spoken_time(value: time) -> str:
         clock = f"{hour} {_TENS[minute // 10]}"
     else:
         clock = f"{hour} {_TENS[minute // 10]}-{_ONES[minute % 10]}"
-    if value.hour < 12:
+    if value.hour < 3:
+        clock = f"{clock} in the morning"
+    elif value.hour < 12:
         clock = f"{clock} a.m."
     return clock
 

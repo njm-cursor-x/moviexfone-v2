@@ -8,6 +8,7 @@ cache is stale.
 from __future__ import annotations
 
 import logging
+import queue
 import threading
 import time
 from datetime import datetime, timedelta
@@ -23,7 +24,6 @@ from moviexfone.timeutil import NY
 log = logging.getLogger(__name__)
 
 _MAX_PER_MINUTE = 50
-_CACHE = timedelta(minutes=15)
 
 
 class RequestBudget:
@@ -47,7 +47,9 @@ class RequestBudget:
             time.sleep(max(0.05, delay))
 
 
-def assemble_is_fresh(db: Database, movie_id: str, *, now: datetime) -> bool:
+def assemble_is_fresh(
+    db: Database, movie_id: str, *, now: datetime, ttl: timedelta | None = None
+) -> bool:
     row = db.query_one(
         """SELECT MAX(fetched_at) AS fetched FROM showtime
            WHERE source = 'assemble' AND movie_id = ?""",
@@ -58,7 +60,8 @@ def assemble_is_fresh(db: Database, movie_id: str, *, now: datetime) -> bool:
     fetched = datetime.fromisoformat(str(row["fetched"]))
     if fetched.tzinfo is None:
         fetched = fetched.replace(tzinfo=NY)
-    return now.astimezone(NY) - fetched.astimezone(NY) < _CACHE
+    window = ttl or timedelta(seconds=900)
+    return now.astimezone(NY) - fetched.astimezone(NY) < window
 
 
 def refresh_assemble(
@@ -67,8 +70,10 @@ def refresh_assemble(
     now: datetime,
     budget: RequestBudget | None = None,
     client: AllowedClient | None = None,
+    only_title: str | None = None,
+    ttl: timedelta | None = None,
 ) -> int:
-    """Fetch NYC cities for catalog films that have a TMDB id and a stale cache."""
+    """Fetch NYC cities for one stale catalog film, or each stale film when asked."""
     limiter = budget or RequestBudget()
     own_client = client is None
     client = client or assemble_client()
@@ -79,11 +84,13 @@ def refresh_assemble(
     )
     try:
         for movie in movies:
+            title = str(movie["title"])
+            if only_title and title.lower() != only_title.lower():
+                continue
             movie_id = str(movie["movie_id"])
-            if assemble_is_fresh(db, movie_id, now=now):
+            if assemble_is_fresh(db, movie_id, now=now, ttl=ttl):
                 continue
             film_id = str(movie["tmdb_id"])
-            title = str(movie["title"])
             cleared = False
             for slug in ALL_CITIES:
                 limiter.wait()
@@ -116,25 +123,38 @@ def refresh_assemble(
 
 
 class AssembleRefresher:
-    """Daemon thread. One refresh, then every 15 minutes until stopped."""
+    """Fetches one title when a search asks, plus one cold pass. No timer over every film."""
 
-    def __init__(self, db: Database) -> None:
+    def __init__(self, db: Database, *, ttl_seconds: int = 900) -> None:
         self._db = db
-        self._stop = threading.Event()
+        self._ttl = timedelta(seconds=max(60, ttl_seconds))
+        self._queue: queue.Queue[str | None] = queue.Queue()
         self._thread = threading.Thread(target=self._run, name="assemble-refresh", daemon=True)
 
     def start(self) -> None:
         self._thread.start()
+        for row in self._db.query(
+            "SELECT title FROM movie WHERE tmdb_id IS NOT NULL AND tmdb_id != ''"
+        ):
+            self.consider(str(row["title"]))
+
+    def consider(self, title: str) -> None:
+        cleaned = title.strip()
+        if cleaned:
+            self._queue.put(cleaned)
 
     def stop(self) -> None:
-        self._stop.set()
+        self._queue.put(None)
 
     def _run(self) -> None:
-        while not self._stop.is_set():
-            try:
-                from moviexfone.timeutil import now_ny
+        from moviexfone.timeutil import now_ny
 
-                refresh_assemble(self._db, now=now_ny())
+        while True:
+            title = self._queue.get()
+            if title is None:
+                return
+            try:
+                refresh_assemble(self._db, now=now_ny(), only_title=title, ttl=self._ttl)
             except Exception as exc:
                 log.warning("assemble worker failed: %s", type(exc).__name__)
                 record_ingest(
@@ -145,8 +165,3 @@ class AssembleRefresher:
                     showtimes=0,
                     error=type(exc).__name__,
                 )
-            self._stop.wait(iso_wait())
-
-
-def iso_wait() -> float:
-    return 15 * 60
