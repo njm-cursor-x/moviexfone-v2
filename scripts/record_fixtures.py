@@ -6,7 +6,14 @@ import json
 import sys
 from pathlib import Path
 
-from moviexfone.sources.fetch import ALAMO_URL, NITEHAWK_URLS, fetch_alamo, fetch_nitehawk
+from moviexfone.sources.fetch import (
+    ALAMO_URL,
+    NITEHAWK_URLS,
+    fetch_alamo,
+    fetch_assemble_city,
+    fetch_nitehawk,
+    geosearch,
+)
 
 
 def main() -> int:
@@ -20,7 +27,9 @@ def main() -> int:
         print("The repo already contains synthetic fixtures dated 2026-10-13.")
         return 2
     (out / "alamo_parsed.json").write_text(
-        json.dumps([row.__dict__ | {"starts_at": row.starts_at.isoformat()} for row in rows[:30]], indent=2),
+        json.dumps(
+            [row.__dict__ | {"starts_at": row.starts_at.isoformat()} for row in rows[:30]], indent=2
+        ),
         encoding="utf-8",
     )
     print(f"alamo sessions parsed: {len(rows)}")
@@ -29,6 +38,20 @@ def main() -> int:
         print(f"nitehawk screenings parsed: {len(nitehawk)} from {list(NITEHAWK_URLS)}")
     except Exception as exc:
         print(f"nitehawk blocked: {type(exc).__name__}")
+    try:
+        payload = fetch_assemble_city("1283515", "new-york-ny")
+        (out / "assemble_verity_new-york-ny.json").write_text(
+            json.dumps(payload)[:200000], encoding="utf-8"
+        )
+        print(f"assemble verity screenings: {payload.get('screening_count')}")
+    except Exception as exc:
+        print(f"assemble blocked: {type(exc).__name__}")
+    found = geosearch("11211")
+    if found:
+        (out / "geosearch_11211.json").write_text(json.dumps(found, indent=2), encoding="utf-8")
+        print(f"geosearch 11211: {found.get('label')}")
+    else:
+        print("geosearch blocked or empty")
     return 0
 
 

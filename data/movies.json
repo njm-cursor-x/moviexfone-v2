@@ -3,70 +3,89 @@
     "movie_id": "movie:verity",
     "title": "Verity",
     "year": 2026,
-    "rating": "PG-13",
-    "runtime_min": 128,
-    "synopsis_short": "A writer uncovers a hidden manuscript that rewrites a marriage.",
-    "tmdb_id": null,
-    "aliases": ["verity"]
+    "rating": null,
+    "runtime_min": null,
+    "synopsis_short": null,
+    "tmdb_id": 1283515,
+    "aliases": [
+      "verity"
+    ]
   },
   {
     "movie_id": "movie:the-social-reckoning",
     "title": "The Social Reckoning",
     "year": 2026,
-    "rating": "R",
-    "runtime_min": 118,
-    "synopsis_short": "A whistleblower faces the company that built her feed.",
+    "rating": null,
+    "runtime_min": null,
+    "synopsis_short": null,
     "tmdb_id": null,
-    "aliases": ["the social reckoning", "social reckoning"]
+    "aliases": [
+      "the social reckoning",
+      "social reckoning"
+    ]
   },
   {
     "movie_id": "movie:digger",
     "title": "Digger",
     "year": 2026,
-    "rating": "PG-13",
-    "runtime_min": 104,
-    "synopsis_short": "A tunnel crew hits something under the East River that is not on the map.",
+    "rating": null,
+    "runtime_min": null,
+    "synopsis_short": null,
     "tmdb_id": null,
-    "aliases": ["digger", "digga"]
+    "aliases": [
+      "digger",
+      "digga"
+    ]
   },
   {
     "movie_id": "movie:other-mommy",
     "title": "Other Mommy",
     "year": 2026,
-    "rating": "R",
-    "runtime_min": 99,
-    "synopsis_short": "A kid's imaginary friend starts answering from the other room.",
+    "rating": null,
+    "runtime_min": null,
+    "synopsis_short": null,
     "tmdb_id": null,
-    "aliases": ["other mommy"]
+    "aliases": [
+      "other mommy"
+    ]
   },
   {
     "movie_id": "movie:primetime",
     "title": "Primetime",
     "year": 2026,
-    "rating": "R",
-    "runtime_min": 112,
-    "synopsis_short": "A late-night host's broadcast starts telling the news before it happens.",
+    "rating": null,
+    "runtime_min": null,
+    "synopsis_short": null,
     "tmdb_id": null,
-    "aliases": ["primetime", "prime time"]
+    "aliases": [
+      "primetime",
+      "prime time"
+    ]
   },
   {
     "movie_id": "movie:resident-evil",
     "title": "Resident Evil",
     "year": 2026,
-    "rating": "R",
-    "runtime_min": 107,
-    "synopsis_short": "A courier crosses a quarantined city to deliver a cure that may not be one.",
+    "rating": null,
+    "runtime_min": null,
+    "synopsis_short": null,
     "tmdb_id": null,
-    "aliases": ["resident evil", "the new resident evil", "new resident evil"]
+    "aliases": [
+      "resident evil",
+      "the new resident evil",
+      "new resident evil"
+    ]
   },
   {
     "movie_id": "movie:night-bus",
     "title": "Night Bus",
     "year": 2026,
-    "rating": "PG",
-    "runtime_min": 96,
-    "synopsis_short": "A 35 millimeter road picture about the last overnight bus out of the city.",
+    "rating": null,
+    "runtime_min": null,
+    "synopsis_short": null,
     "tmdb_id": null,
-    "aliases": ["night bus"]
+    "aliases": [
+      "night bus"
+    ]
   }
 ]

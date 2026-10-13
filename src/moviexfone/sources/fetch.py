@@ -30,6 +30,7 @@ CITY_SLUGS = {
     "Queens": ["astoria-ny", "flushing-ny", "forest-hills-ny"],
     "Staten Island": ["staten-island-ny"],
 }
+ALL_CITIES = tuple(slug for slugs in CITY_SLUGS.values() for slug in slugs)
 
 
 def _client() -> AllowedClient:
@@ -75,10 +76,35 @@ def fetch_nitehawk(client: AllowedClient | None = None) -> list[IncomingShow]:
             http.close()
 
 
+def fetch_assemble_city(
+    tmdb_id: str,
+    city_slug: str,
+    *,
+    client: AllowedClient | None = None,
+) -> dict[str, Any]:
+    if not _TMDB_RE.fullmatch(tmdb_id) or not _CITY_RE.fullmatch(city_slug):
+        raise UnsafeURLError("bad assemble path")
+    own = client is None
+    http = client or _client()
+    try:
+        url = f"https://api.assemble.film/films/{tmdb_id}/screenings"
+        response = http.get(url, params={"city": city_slug}, max_bytes=2_000_000)
+        if response.status_code != 200:
+            log.info("assemble status=%s city=%s", response.status_code, city_slug)
+            return {}
+        payload = response.json()
+        return payload if isinstance(payload, dict) else {}
+    finally:
+        if own:
+            http.close()
+
+
 def fetch_assemble_film(
     tmdb_id: str,
     cities: list[str],
     client: AllowedClient | None = None,
+    *,
+    title: str | None = None,
 ) -> list[IncomingShow]:
     if not _TMDB_RE.fullmatch(tmdb_id):
         raise UnsafeURLError("bad tmdb id")
@@ -89,17 +115,8 @@ def fetch_assemble_film(
         for city in cities:
             if not _CITY_RE.fullmatch(city):
                 continue
-            url = f"https://api.assemble.film/films/{tmdb_id}/screenings"
-            response = http.get(url, params={"city": city}, max_bytes=2_000_000)
-            if response.status_code != 200:
-                log.info("assemble status=%s city=%s", response.status_code, city)
-                continue
-            try:
-                payload = response.json()
-            except ValueError:
-                continue
-            if isinstance(payload, dict):
-                rows.extend(parse_assemble(payload))
+            payload = fetch_assemble_city(tmdb_id, city, client=http)
+            rows.extend(parse_assemble(payload, title=title))
         return rows
     finally:
         if own:
@@ -125,17 +142,39 @@ def geosearch(text: str, client: AllowedClient | None = None) -> dict[str, Any] 
             http.close()
     if not isinstance(payload, dict):
         return None
+    return pick_geosearch(payload, query)
+
+
+def pick_geosearch(payload: dict[str, Any], query: str) -> dict[str, Any] | None:
+    """Prefer a ZIP or neighborhood over a street address with a house number."""
     features = payload.get("features")
     if not isinstance(features, list):
         return None
+    ranked: list[tuple[int, dict[str, Any]]] = []
+    zip_query = bool(re.fullmatch(r"\d{5}", query.strip()))
     for feature in features:
+        if not isinstance(feature, dict):
+            continue
+        raw_props = feature.get("properties")
+        props: dict[str, Any] = raw_props if isinstance(raw_props, dict) else {}
+        layer = str(props.get("layer") or "")
+        rank = 50
+        if zip_query and layer == "postalcode":
+            rank = 0
+        elif layer in {"neighbourhood", "macrohood", "microhood", "borough", "locality"}:
+            rank = 1
+        elif props.get("housenumber"):
+            rank = 20
+        ranked.append((rank, feature))
+    ranked.sort(key=lambda item: item[0])
+    for _rank, feature in ranked:
         if not isinstance(feature, dict):
             continue
         raw_geometry = feature.get("geometry")
         geometry: dict[str, Any] = raw_geometry if isinstance(raw_geometry, dict) else {}
         coords = geometry.get("coordinates")
         raw_props = feature.get("properties")
-        props: dict[str, Any] = raw_props if isinstance(raw_props, dict) else {}
+        props = raw_props if isinstance(raw_props, dict) else {}
         if not isinstance(coords, list) or len(coords) < 2:
             continue
         borough = props.get("borough") or props.get("borough_gid")

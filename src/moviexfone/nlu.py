@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import date, datetime, time
+from datetime import datetime, time
 
 from moviexfone.timeutil import (
+    NY,
+    business_date,
     parse_after_phrase,
-    parse_date_token,
-    upcoming_weekend,
+    resolve_when,
 )
 
 _FILLER = {
@@ -108,6 +109,7 @@ class ParsedQuestion:
     after_time: str | None
     format: str
     date_spoken: str
+    date_unclear: bool = False
 
 
 def parse_question(
@@ -121,7 +123,7 @@ def parse_question(
     intent = _intent(raw)
     fmt, raw_left = _format(raw)
     after = parse_after_phrase(raw)
-    dates, spoken, raw_left = _dates(raw_left, now.date())
+    dates, spoken, raw_left, unclear = _dates(raw_left, now)
     movie, raw_left = _movie(raw_left, titles)
     if after is not None:
         raw_left = re.sub(
@@ -143,6 +145,7 @@ def parse_question(
         after_time=after.strftime("%H:%M") if after else None,
         format=fmt,
         date_spoken=spoken,
+        date_unclear=unclear,
     )
 
 
@@ -167,29 +170,30 @@ def _format(text: str) -> tuple[str, str]:
     return "any", text
 
 
-def _dates(text: str, today: date) -> tuple[list[str], str, str]:
+def _dates(text: str, now: datetime) -> tuple[list[str], str, str, bool]:
+    cinema = business_date(now)
+    local_day = now.astimezone(NY).date()
     if "this weekend" in text or re.search(r"\bweekend\b", text):
-        days = upcoming_weekend(today)
-        return (
-            [day.isoformat() for day in days],
-            "this weekend",
-            text.replace("this weekend", " ").replace("weekend", " "),
-        )
-    if "tonight" in text:
-        return [today.isoformat()], "tonight", text.replace("tonight", " ")
+        dates, spoken, _unclear = resolve_when("this weekend", now)
+        return dates, spoken, text.replace("this weekend", " ").replace("weekend", " "), False
+    nxt = re.search(rf"\bnext\s+({_WEEKDAY})\b", text)
+    if nxt:
+        dates, spoken, unclear = resolve_when(nxt.group(0), now)
+        return dates, spoken, re.sub(rf"\bnext\s+{nxt.group(1)}\b", " ", text), unclear
     if "tomorrow" in text:
-        day = today.toordinal() + 1
-        return [date.fromordinal(day).isoformat()], "tomorrow", text.replace("tomorrow", " ")
+        dates, spoken, _unclear = resolve_when("tomorrow", now)
+        return dates, spoken, text.replace("tomorrow", " "), False
+    if "tonight" in text:
+        return [cinema.isoformat()], "tonight", text.replace("tonight", " "), False
     if re.search(r"\btoday\b", text):
-        return [today.isoformat()], "today", re.sub(r"\btoday\b", " ", text)
+        return [cinema.isoformat()], "today", re.sub(r"\btoday\b", " ", text), False
     match = re.search(rf"\b({_WEEKDAY})\b", text)
     if match:
-        parsed = parse_date_token(match.group(1), today)
-        if parsed is None:
-            return [today.isoformat()], "today", text
-        spoken = parsed.strftime("%A")
-        return [parsed.isoformat()], spoken, re.sub(rf"\b{match.group(1)}\b", " ", text)
-    return [today.isoformat()], "today", text
+        dates, spoken, unclear = resolve_when(match.group(1), now)
+        return dates, spoken, re.sub(rf"\b{match.group(1)}\b", " ", text), unclear
+    if re.search(r"\b(next|someday|whenever)\b", text):
+        return [local_day.isoformat()], "today", text, True
+    return [cinema.isoformat()], "today", text, False
 
 
 def _movie(text: str, titles: list[tuple[str, list[str]]]) -> tuple[str | None, str]:

@@ -23,3 +23,4 @@ htmlcov/
 *.log
 gitleaks
 gitleaks.tar.gz
+data/fixtures/live/

@@ -37,6 +37,7 @@ def ask(
             now=now,
             date_spoken=parsed.date_spoken,
             geocode=geocode,
+            date_unclear=parsed.date_unclear,
         )
     result = dict(result)
     result["parsed"] = {

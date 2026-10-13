@@ -86,8 +86,10 @@ def check(kind: str, result: dict[str, Any]) -> None:
         assert results == []
         assert "9:40 PM" in result["nearest_alternative"]["times"]
     elif kind == "about":
-        assert result["runtime_min"] == 118
-        assert result["synopsis"]
+        assert result["runtime_min"] is None
+        assert not result["synopsis"]
+        assert "whistleblower" not in str(result["speak"]).lower()
+        assert "don't have" in str(result["speak"]).lower()
     elif kind == "ambiguous":
         assert result["error"] == "location_ambiguous"
         assert len(result["options"]) >= 2

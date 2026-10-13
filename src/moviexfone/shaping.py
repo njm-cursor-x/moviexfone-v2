@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import time
 
 from moviexfone.timeutil import spoken_time
@@ -34,6 +34,7 @@ class ShowCard:
     ticket_url: str | None
     source: str
     borough: str | None = None
+    day_labels: list[str] = field(default_factory=list)
 
 
 def estimate_spoken_seconds(text: str) -> float:
@@ -60,6 +61,17 @@ def _format_phrase(fmt: str) -> str:
     return f" in {spoken}"
 
 
+def _clocks(card: ShowCard, max_times: int, name_days: bool) -> str:
+    moments = card.times_local[:max_times]
+    words = [spoken_time(moment) for moment in moments]
+    labels = card.day_labels[: len(words)]
+    if name_days and labels and len(set(labels)) == 1:
+        return f"{labels[0]} at {_join_times(words)}"
+    if name_days and labels and len(labels) == len(words):
+        return _join_times([f"{label} {word}" for label, word in zip(labels, words, strict=False)])
+    return _join_times(words)
+
+
 def render_speak(
     cards: list[ShowCard],
     *,
@@ -67,12 +79,12 @@ def render_speak(
     more: int,
     max_times: int,
     specific_movie: bool,
+    name_days: bool = False,
 ) -> str:
     parts: list[str] = []
     same_theater = len({card.theater for card in cards}) == 1 and len(cards) > 1
     for index, card in enumerate(cards):
-        words = [spoken_time(moment) for moment in card.times_local[:max_times]]
-        clock = _join_times(words)
+        clock = _clocks(card, max_times, name_days)
         fmt = _format_phrase(card.format_norm)
         if specific_movie:
             if index == 0:
@@ -110,6 +122,7 @@ def trim_cards(
     when: str,
     specific_movie: bool,
     second_budget: float = 10.5,
+    name_days: bool = False,
 ) -> tuple[list[ShowCard], int, str]:
     """Return the page of cards, how many remain, and a short `speak` line."""
     start = max(0, (page - 1) * max_cards)
@@ -125,6 +138,7 @@ def trim_cards(
             more=remaining,
             max_times=limit,
             specific_movie=specific_movie,
+            name_days=name_days,
         )
 
     speak = _speak(chosen, more_after, times)
@@ -151,6 +165,7 @@ def trim_cards(
                 ticket_url=card.ticket_url,
                 source=card.source,
                 borough=card.borough,
+                day_labels=list(card.day_labels[:times]),
             )
         )
     return trimmed, more_after, speak

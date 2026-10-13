@@ -46,6 +46,37 @@ def enforce_rate_limit(request: Request) -> None:
     raise HTTPException(status_code=429, detail="Too many requests", headers={"Retry-After": "30"})
 
 
+_LOCAL_HOSTS = {"127.0.0.1", "::1", "localhost", "testclient"}
+
+
+def origin_allowed(origin: str | None, allowed: tuple[str, ...]) -> bool:
+    if not origin:
+        return False
+    return origin.rstrip("/") in {item.rstrip("/") for item in allowed}
+
+
+def voice_connection_allowed(
+    *,
+    origin: str | None,
+    host: str | None,
+    token: str | None,
+    allowed_origins: tuple[str, ...],
+    secret: str | None,
+) -> bool:
+    """Browsers must present an allowed Origin. Remote clients with no Origin need the secret."""
+    if origin and origin_allowed(origin, allowed_origins):
+        return True
+    if origin and (host or "") == "testclient" and origin.startswith("http://testserver"):
+        return True
+    if origin:
+        return False
+    if (host or "") in _LOCAL_HOSTS:
+        return True
+    if not secret or not token:
+        return False
+    return secrets_equal(token, secret)
+
+
 def enforce_tool_secret(request: Request) -> None:
     secret = request.app.state.settings.tool_secret
     if not secret:

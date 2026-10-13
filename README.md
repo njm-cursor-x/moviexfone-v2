@@ -67,7 +67,7 @@ There is no AMC developer API, no Fandango, no bot-wall scraping, and no scraper
 
 **Fixtures.** This environment could not open `drafthouse.com`, `api.assemble.film`, `nitehawkcinema.com`, or `geosearch.planninglabs.nyc` (TLS was cut by the egress allowlist on 2026-10-13). `data/fixtures/` is synthetic but shaped like those feeds, and one Alamo time and one Nitehawk time are deliberately wrong so tests prove the first-party row wins. They are not a live capture. `python scripts/record_fixtures.py` tries the live hosts and says so if they are blocked.
 
-`MOVIEXFONE_LIVE_DATA=1` fetches Alamo and Nitehawk at startup and on `POST /admin/refresh`. Assemble stays off the voice path: a cold city query can take the better part of a minute, so the tool returns what is already in SQLite.
+`MOVIEXFONE_LIVE_DATA=1` loads the theater registry only. It does not load the sample showtimes. Alamo and Nitehawk are fetched at startup. Assemble runs on a background worker that stays under 50 requests a minute and skips a film for 15 minutes after a successful fetch. A cold city lookup can take about 25 seconds, so the voice tool answers from SQLite and never waits on Assemble. `/health/data` shows each source's row count, last fetch, and last error.
 
 Source priority is per theater, not a merge: Alamo feed for Alamo, Nitehawk JSON-LD for the dates it actually publishes, Assemble everywhere else. Assemble rows for an Alamo theater are dropped when the Alamo feed is loaded.
 
@@ -134,6 +134,6 @@ The eval is `pytest tests/test_eval.py`: 20 scripted caller questions against th
 - Nitehawk's homepage JSON-LD is today only. Later dates fall through to Assemble.
 - "What's playing" only knows titles we have already stored (the fixture list, plus whatever Alamo and Nitehawk published). It will miss a film nobody has asked about and that Alamo is not playing.
 - Venue coordinates in the registry are approximate, good to about a block. Neighborhoods and landmarks are a local gazetteer; NYC Planning Labs GeoSearch is only the fallback, and it is skipped for names we already know so "Park Slope" does not become the Armory.
-- The bundled showtimes are illustrative, dated 2026-10-13, because the live hosts were blocked here. Turn on `MOVIEXFONE_LIVE_DATA` on a machine that can reach them.
+- The bundled showtimes are illustrative, dated 2026-10-13, and are for the offline demo and the tests. Live mode never serves them. Turn on `MOVIEXFONE_LIVE_DATA` on a machine that can reach the feeds. Only Verity has a TMDB id in `data/movies.json` (1283515, from the 2026-10-13 Assemble capture), so the Assemble worker starts with that film.
 - Live xAI audio was not run in this workspace. There is no key here. The tool loop is tested with a fake session.
 - This is a local demo. It is not a public phone line, and it should not be branded as one.

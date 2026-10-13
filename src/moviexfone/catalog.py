@@ -45,8 +45,18 @@ def _screens(raw: str) -> int | None:
     return None
 
 
-def seed(db: Database, data: Path, *, now: datetime) -> dict[str, int]:
-    """Replace registry and fixture showtimes. Safe to call more than once."""
+def seed(
+    db: Database,
+    data: Path,
+    *,
+    now: datetime,
+    include_showtimes: bool = True,
+) -> dict[str, int]:
+    """Replace the registry. Fixture showtimes load only when include_showtimes is set.
+
+    Live mode must pass include_showtimes=False so sample times are never served
+    as real listings.
+    """
     db.execute("DELETE FROM showtime")
     db.execute("DELETE FROM movie_alias")
     db.execute("DELETE FROM movie")
@@ -54,14 +64,21 @@ def seed(db: Database, data: Path, *, now: datetime) -> dict[str, int]:
     db.execute("DELETE FROM theater")
     theater_count = _load_theaters(db, data)
     movie_count = _load_movies(db, data)
-    shows = _fixture_shows(data)
-    _apply(db, shows["assemble"], mode="insert", now=now)
-    _apply(db, shows["nitehawk"], mode="dates", now=now)
-    _apply(db, shows["alamo"], mode="theaters", now=now)
+    if include_showtimes:
+        shows = _fixture_shows(data)
+        _apply(db, shows["assemble"], mode="insert", now=now)
+        _apply(db, shows["nitehawk"], mode="dates", now=now)
+        _apply(db, shows["alamo"], mode="theaters", now=now)
     _mark_coverage(db, now)
     db.execute(
         "INSERT INTO ingest_run (source, started_at, finished_at, ok, theaters, showtimes, error) VALUES (?, ?, ?, 1, ?, ?, NULL)",
-        ("fixtures", iso_ny(now), iso_ny(now), theater_count, _show_count(db)),
+        (
+            "fixtures" if include_showtimes else "registry",
+            iso_ny(now),
+            iso_ny(now),
+            theater_count,
+            _show_count(db),
+        ),
     )
     return {"theaters": theater_count, "movies": movie_count, "showtimes": _show_count(db)}
 
@@ -199,6 +216,8 @@ def _apply(db: Database, rows: list[IncomingShow], *, mode: str, now: datetime) 
         return 0
     resolved = [_ResolvedShow.from_incoming(db, row) for row in rows]
     kept = [row for row in resolved if row is not None]
+    if kept and kept[0].source == "assemble":
+        kept = [row for row in kept if not _alamo_owns(db, row.theater_id)]
     if mode == "theaters":
         ids = sorted({row.theater_id for row in kept})
         _delete_theaters(db, ids)
@@ -292,6 +311,80 @@ class _ResolvedShow:
         )
 
 
+_GENERIC_VENUE = {"cinema", "cinemas", "theater", "theaters", "the", "and", "ua", "dine", "in"}
+_VENUE_DROP = re.compile(r"\b(stadium|imax|rpx|4dx|dolby|screenx)\b", re.IGNORECASE)
+
+
+def normalize_venue(name: str) -> str:
+    text = name.lower().replace("&", " and ").replace("theatre", "theater")
+    text = text.replace("cinemas", "cinema").replace("theaters", "theater")
+    text = _VENUE_DROP.sub(" ", text)
+    text = re.sub(r"\b\d+\b", " ", text)
+    text = re.sub(r"[^a-z\s]", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _venue_tokens(name: str) -> set[str]:
+    return {token for token in normalize_venue(name).split() if token not in _GENERIC_VENUE}
+
+
+def _match_venue_name(db: Database, key: str) -> str | None:
+    wanted = _venue_tokens(key)
+    if not wanted:
+        return None
+    best: list[tuple[int, str]] = []
+    for theater in db.query(
+        "SELECT theater_id, name, spoken_name FROM theater WHERE status = 'open'"
+    ):
+        aliases = [
+            str(row["alias"])
+            for row in db.query(
+                "SELECT alias FROM theater_alias WHERE theater_id = ?", (theater["theater_id"],)
+            )
+        ]
+        names = [str(theater["name"]), str(theater["spoken_name"] or ""), *aliases]
+        overlap = 0
+        for alias in names:
+            tokens = _venue_tokens(alias)
+            if not tokens:
+                continue
+            if wanted == tokens or wanted <= tokens or tokens <= wanted:
+                overlap = max(overlap, len(wanted & tokens))
+        if overlap:
+            best.append((overlap, str(theater["theater_id"])))
+    if not best:
+        return None
+    best.sort(reverse=True)
+    if len(best) > 1 and best[0][0] == best[1][0] and best[0][1] != best[1][1]:
+        return None
+    return best[0][1]
+
+
+def record_ingest(
+    db: Database,
+    *,
+    source: str,
+    now: datetime,
+    ok: bool,
+    showtimes: int,
+    error: str | None,
+) -> None:
+    stamp = iso_ny(now)
+    db.execute(
+        """INSERT INTO ingest_run (source, started_at, finished_at, ok, theaters, showtimes, error)
+           VALUES (?, ?, ?, ?, 0, ?, ?)""",
+        (source, stamp, stamp, 1 if ok else 0, showtimes, error),
+    )
+
+
+def _alamo_owns(db: Database, theater_id: str) -> bool:
+    row = db.query_one(
+        "SELECT 1 AS present FROM showtime WHERE theater_id = ? AND source = 'alamo_json' LIMIT 1",
+        (theater_id,),
+    )
+    return row is not None
+
+
 def _match_theater(db: Database, key: str) -> str | None:
     direct = db.query_one("SELECT theater_id FROM theater WHERE theater_id = ?", (key,))
     if direct:
@@ -306,6 +399,9 @@ def _match_theater(db: Database, key: str) -> str | None:
     )
     if by_name:
         return str(by_name["theater_id"])
+    fuzzy = _match_venue_name(db, key)
+    if fuzzy:
+        return fuzzy
     from moviexfone.locations import resolve_location
 
     theaters = load_theater_refs(db)
@@ -316,9 +412,27 @@ def _match_theater(db: Database, key: str) -> str | None:
 
 
 def _ensure_movie(db: Database, title: str) -> str:
+    from moviexfone.titles import resolve_title
+
     existing = db.query_one("SELECT movie_id FROM movie_alias WHERE alias = ?", (title.lower(),))
     if existing:
         return str(existing["movie_id"])
+    catalog = []
+    for movie in db.query("SELECT movie_id, title FROM movie"):
+        aliases = [
+            str(row["alias"])
+            for row in db.query(
+                "SELECT alias FROM movie_alias WHERE movie_id = ?", (movie["movie_id"],)
+            )
+        ]
+        catalog.append((str(movie["movie_id"]), str(movie["title"]), aliases))
+    hit, _suggestions = resolve_title(title, catalog)
+    if hit is not None and hit.score >= 0.9:
+        db.execute(
+            "INSERT OR IGNORE INTO movie_alias (movie_id, alias) VALUES (?, ?)",
+            (hit.movie_id, title.lower()),
+        )
+        return hit.movie_id
     movie_id = movie_id_for(title)
     found = db.query_one("SELECT movie_id FROM movie WHERE movie_id = ?", (movie_id,))
     if not found:
@@ -392,21 +506,36 @@ def load_places() -> list[PlaceRef]:
 
 # Re-export for type checkers that want the date helper used by tests.
 def refresh_live(db: Database, *, now: datetime) -> dict[str, object]:
-    """Pull first-party feeds. Failures are reported, never raised, and never logged with secrets."""
+    """Pull first-party feeds. Failures are recorded and never raised."""
     from moviexfone.sources.fetch import fetch_alamo, fetch_nitehawk
 
     report: dict[str, object] = {}
     try:
         rows = fetch_alamo()
-        report["alamo"] = _apply(db, rows, mode="theaters", now=now)
+        count = _apply(db, rows, mode="theaters", now=now)
+        report["alamo"] = count
+        record_ingest(db, source="alamo_json", now=now, ok=True, showtimes=count, error=None)
     except Exception as exc:
         log.warning("alamo refresh failed: %s", type(exc).__name__)
         report["alamo_error"] = type(exc).__name__
+        record_ingest(
+            db, source="alamo_json", now=now, ok=False, showtimes=0, error=type(exc).__name__
+        )
     try:
         rows = fetch_nitehawk()
-        report["nitehawk"] = _apply(db, rows, mode="dates", now=now)
+        count = _apply(db, rows, mode="dates", now=now)
+        report["nitehawk"] = count
+        record_ingest(db, source="nitehawk_jsonld", now=now, ok=True, showtimes=count, error=None)
     except Exception as exc:
         log.warning("nitehawk refresh failed: %s", type(exc).__name__)
         report["nitehawk_error"] = type(exc).__name__
+        record_ingest(
+            db,
+            source="nitehawk_jsonld",
+            now=now,
+            ok=False,
+            showtimes=0,
+            error=type(exc).__name__,
+        )
     _mark_coverage(db, now)
     return report

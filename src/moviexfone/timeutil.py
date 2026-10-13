@@ -102,6 +102,118 @@ def parse_clock(value: str | None) -> time | None:
     return time(hour, minute)
 
 
+_MONTHS = {
+    "january": 1,
+    "jan": 1,
+    "february": 2,
+    "feb": 2,
+    "march": 3,
+    "mar": 3,
+    "april": 4,
+    "apr": 4,
+    "may": 5,
+    "june": 6,
+    "jun": 6,
+    "july": 7,
+    "jul": 7,
+    "august": 8,
+    "aug": 8,
+    "september": 9,
+    "sep": 9,
+    "sept": 9,
+    "october": 10,
+    "oct": 10,
+    "november": 11,
+    "nov": 11,
+    "december": 12,
+    "dec": 12,
+}
+
+
+def _strip_daypart(raw: str) -> str:
+    return re.sub(r"\s+(night|evening|afternoon|morning)$", "", raw.strip().lower())
+
+
+def _month_day(raw: str, today: date) -> date | None:
+    named = re.fullmatch(r"([a-z]+)\s+(\d{1,2})(?:st|nd|rd|th)?", raw)
+    numeric = re.fullmatch(r"(\d{1,2})/(\d{1,2})(?:/(\d{2,4}))?", raw)
+    month = day = year = None
+    if named and named.group(1) in _MONTHS:
+        month = _MONTHS[named.group(1)]
+        day = int(named.group(2))
+        year = today.year
+    elif numeric:
+        month = int(numeric.group(1))
+        day = int(numeric.group(2))
+        if numeric.group(3):
+            year = int(numeric.group(3))
+            if year < 100:
+                year += 2000
+        else:
+            year = today.year
+    if month is None or day is None or year is None:
+        return None
+    try:
+        found = date(year, month, day)
+    except ValueError:
+        return None
+    if numeric and numeric.group(3) is None and found < today - timedelta(days=1):
+        try:
+            found = date(year + 1, month, day)
+        except ValueError:
+            return None
+    if named and found < today - timedelta(days=1):
+        try:
+            found = date(year + 1, month, day)
+        except ValueError:
+            return None
+    return found
+
+
+def resolve_when(value: str | None, now: datetime) -> tuple[list[str], str, bool]:
+    """Return ISO dates, a spoken label, and whether the phrase was unclear.
+
+    An empty value means the cinema business day. A phrase we cannot read is
+    unclear instead of silently becoming today.
+    """
+    local = now.astimezone(NY)
+    cinema = business_date(now)
+    if value is None or not value.strip():
+        return [cinema.isoformat()], "today", False
+    original = value.strip().lower()
+    raw = _strip_daypart(original)
+    if raw in {"today", "tonight"}:
+        spoken = "tonight" if "tonight" in original or raw == "tonight" else "today"
+        return [cinema.isoformat()], spoken, False
+    if raw == "tomorrow":
+        day = local.date() + timedelta(days=1)
+        return [day.isoformat()], "tomorrow", False
+    if "weekend" in raw:
+        anchor = cinema if local.time() < time(3, 0) else local.date()
+        days = upcoming_weekend(anchor)
+        return [day.isoformat() for day in days], "this weekend", False
+    nxt = re.fullmatch(r"next\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)", raw)
+    if nxt:
+        target = _WEEKDAYS[nxt.group(1)]
+        delta = (target - local.date().weekday()) % 7
+        if delta == 0:
+            delta = 7
+        day = local.date() + timedelta(days=delta)
+        return [day.isoformat()], day.strftime("%A"), False
+    if raw in _WEEKDAYS:
+        target = _WEEKDAYS[raw]
+        delta = (target - local.date().weekday()) % 7
+        day = local.date() + timedelta(days=delta)
+        return [day.isoformat()], day.strftime("%A"), False
+    month_day = _month_day(raw, local.date())
+    if month_day is not None:
+        return [month_day.isoformat()], month_day.strftime("%A"), False
+    token = parse_date_token(raw, local.date())
+    if token is not None and re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw):
+        return [token.isoformat()], token.isoformat(), False
+    return [], original, True
+
+
 def parse_date_token(value: str | None, today: date) -> date | None:
     if not value:
         return None
@@ -157,6 +269,8 @@ def spoken_time(value: time) -> str:
         clock = f"{hour} {_TENS[minute // 10]}"
     else:
         clock = f"{hour} {_TENS[minute // 10]}-{_ONES[minute % 10]}"
+    if value.hour < 12:
+        clock = f"{clock} a.m."
     return clock
 
 

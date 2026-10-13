@@ -50,15 +50,22 @@ def search_showtimes(
     db: Database,
     *,
     location: str,
-    movie: str | None,
+    movie: str | None = None,
     dates: list[str],
-    after_time: str | None,
-    format_name: str,
-    page: int,
+    after_time: str | None = None,
+    format_name: str = "any",
+    page: int = 1,
     now: datetime,
     date_spoken: str,
     geocode: Any = None,
+    date_unclear: bool = False,
 ) -> dict[str, Any]:
+    if date_unclear:
+        return {
+            "error": "date_unclear",
+            "speak": "Which day do you mean?",
+            "note": "Ask which day. Do not guess today. Do not search again until they answer.",
+        }
     theaters = _theaters(db)
     places = _places()
     resolution = resolve_location(location, theaters, places, geocode=geocode)
@@ -95,13 +102,16 @@ def search_showtimes(
         if row.business_date in dates
         and (movie_id is None or row.movie_id == movie_id)
         and _format_ok(row, format_name)
+        and row.starts_at >= now
         and show_matches_after(row.local_t, after)
         and _in_resolution(row, resolution)
     ]
     if format_name not in {"", "any"} and not matched:
         return _format_gap(db, resolution, format_name, date_spoken, dates)
 
-    if not matched and movie_id is not None:
+    if not matched:
+        if movie_id is None:
+            return _nothing_listed(resolution, date_spoken, rows, now)
         return _alternative(
             rows,
             resolution,
@@ -124,6 +134,7 @@ def search_showtimes(
         max_times=max_times,
         when=when,
         specific_movie=movie_id is not None,
+        name_days=date_spoken == "this weekend",
     )
     used = [
         row
@@ -141,7 +152,8 @@ def search_showtimes(
     payload = _payload(resolution, date_spoken, chosen, more, speak, oldest)
     if not chosen:
         payload["note"] = "No further listings. Do not search again."
-        payload["speak"] = "That's everything I have on that."
+        payload["speak"] = f"I don't have more live times for {resolution.label}."
+        payload["coverage_note"] = payload["speak"]
     return payload
 
 
@@ -153,18 +165,26 @@ def get_movie_info(db: Database, movie: str) -> dict[str, Any]:
     if row is None or title is None:
         return {"error": "movie_not_found", "did_you_mean": [], "speak": "I don't have that title."}
     runtime = row["runtime_min"]
-    rating = sanitize_display(row["rating"], limit=12) or "unrated"
-    synopsis = (
-        sanitize_display(row["synopsis_short"], limit=160)
-        or "I don't have a synopsis for that one."
-    )
-    spoken_runtime = f"{runtime} minutes" if runtime else "an unknown runtime"
-    speak = f"{title} is {rating}, {spoken_runtime}. {synopsis}"
+    rating = sanitize_display(row["rating"], limit=12)
+    synopsis = sanitize_display(row["synopsis_short"], limit=160)
+    bits: list[str] = []
+    if rating:
+        bits.append(rating)
+    if runtime:
+        bits.append(f"{runtime} minutes")
+    if bits and synopsis:
+        speak = f"{title} is {', '.join(bits)}. {synopsis}"
+    elif synopsis:
+        speak = f"{title}. {synopsis}"
+    elif bits:
+        speak = f"{title} is {', '.join(bits)}."
+    else:
+        speak = f"I don't have a synopsis or runtime for {title}."
     return {
         "movie": title,
         "rating": rating or None,
         "runtime_min": runtime,
-        "synopsis": synopsis,
+        "synopsis": synopsis or None,
         "speak": speak,
     }
 
@@ -318,13 +338,15 @@ def _cards(rows: list[_Row], resolution: Resolution, *, broad: bool) -> list[Sho
                 movie_id=first.movie_id,
                 distance_mi=_distance(first, resolution),
                 times_local=[item.local_t for item in bucket],
+                day_labels=[item.starts_at.astimezone(NY).strftime("%A") for item in bucket],
                 format_norm=first.format_norm,
                 ticket_url=first.ticket_url,
                 source=first.source,
                 borough=first.borough,
             )
         )
-    if broad and resolution.kind != "theater":
+    theater_ids = {card.theater_id for card in cards}
+    if broad and resolution.kind != "theater" and len(theater_ids) > 1:
         per_theater: dict[str, ShowCard] = {}
         for card in sorted(
             cards, key=lambda item: item.times_local[0] if item.times_local else time(23, 59)
@@ -448,6 +470,46 @@ def _format_words(fmt: str) -> str:
     }.get(fmt, fmt)
 
 
+def _nothing_listed(
+    resolution: Resolution,
+    date_spoken: str,
+    rows: list[_Row],
+    now: datetime,
+) -> dict[str, Any]:
+    speak = f"I don't have live times I can see for {resolution.label}."
+    upcoming = [row for row in rows if row.starts_at >= now]
+    alternative = None
+    if upcoming and resolution.lat is not None and resolution.lng is not None:
+        upcoming.sort(key=lambda row: _distance(row, resolution) or 99.0)
+        nearest = upcoming[0]
+        miles = _distance(nearest, resolution)
+        if miles is not None and miles <= 15:
+            alternative = {
+                "theater": nearest.theater,
+                "distance_mi": miles,
+                "movie": nearest.movie,
+                "times": [display_time(nearest.local_t)],
+                "format": None,
+                "ticket_url": nearest.ticket_url,
+            }
+            speak = (
+                f"{speak} The closest listing I have is {spoken_time(nearest.local_t)} "
+                f"at {nearest.theater}."
+            )
+    return {
+        "resolved_location": _resolved_json(resolution),
+        "date_spoken": date_spoken,
+        "results": [],
+        "more_results": 0,
+        "nearest_alternative": alternative,
+        "speak": speak,
+        "coverage_note": f"I don't have live times I can see for {resolution.label}.",
+        "note": "Say that no live times are listed. Offer nearest_alternative if present. Do not search again.",
+        "source": None,
+        "data_as_of": iso_ny(now),
+    }
+
+
 def _alternative(
     rows: list[_Row],
     resolution: Resolution,
@@ -463,12 +525,17 @@ def _alternative(
         for row in rows
         if row.movie_id == movie_id
         and row.business_date in dates
+        and row.starts_at >= now
         and _in_resolution(row, resolution)
     ]
     pool = same_place
     elsewhere = False
     if not pool:
-        pool = [row for row in rows if row.movie_id == movie_id and row.business_date in dates]
+        pool = [
+            row
+            for row in rows
+            if row.movie_id == movie_id and row.business_date in dates and row.starts_at >= now
+        ]
         elsewhere = True
     if not pool:
         speak = f"No screenings listed for {movie_title}. Want another movie or neighborhood?"

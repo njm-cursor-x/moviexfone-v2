@@ -66,16 +66,18 @@ def _as_dt(value: str) -> datetime | None:
 
 
 def _status(raw: str | None) -> str:
-    text = (raw or "on_sale").strip().lower().replace("-", "_")
-    if text in {"onsale", "on_sale", "available"}:
+    text = (raw or "").strip().lower().replace("-", "").replace("_", "")
+    if text in {"onsale", "available"}:
         return "on_sale"
-    if text in {"soldout", "sold_out"}:
+    if text in {"soldout"}:
         return "sold_out"
     if text in {"past", "expired"}:
         return "past"
-    if text in {"coming_soon", "comingsoon"}:
+    if text in {"comingsoon"}:
         return "coming_soon"
-    return "on_sale"
+    if text in {"notonsale"}:
+        return "not_on_sale"
+    return "unknown"
 
 
 def _format(raw: str | None) -> str:
@@ -123,7 +125,7 @@ def parse_alamo(payload: dict[str, Any], *, source: str = "alamo_json") -> list[
         if not theater_id or not movie_title or starts is None:
             continue
         status = _status(str(session.get("status") or ""))
-        if status in {"past", "sold_out"}:
+        if status != "on_sale":
             continue
         fmt_raw = str(session.get("formatSlug") or "")
         session_id = session.get("sessionId") or session.get("id") or ""
@@ -158,15 +160,31 @@ def _first(item: dict[str, Any], keys: tuple[str, ...]) -> str:
     return ""
 
 
-def parse_assemble(payload: dict[str, Any], *, source: str = "assemble") -> list[IncomingShow]:
-    """Accept the fixture shape and a few likely live shapes. No format field exists."""
+def parse_assemble(
+    payload: dict[str, Any],
+    *,
+    source: str = "assemble",
+    title: str | None = None,
+) -> list[IncomingShow]:
+    """Accept the live Assemble shape and the older per-screening title shape.
+
+    Live responses put the film id on the payload and omit the title from each
+    screening, so the caller passes the title it asked for.
+    """
     screenings = _collect_screenings(payload)
+    fallback = sanitize_display(title or "", limit=120)
     rows: list[IncomingShow] = []
     for item in screenings:
-        title = sanitize_display(
+        title_here = sanitize_display(
             _first(item, ("film", "film_title", "movie", "title", "name")),
             limit=120,
         )
+        if not title_here or title_here == sanitize_display(
+            _first(item, ("venue", "venue_name", "cinema", "theater", "theatre")),
+            limit=120,
+        ):
+            title_here = fallback
+        title = title_here
         venue = sanitize_display(
             _first(item, ("venue", "venue_name", "cinema", "theater", "theatre", "location")),
             limit=120,
@@ -175,7 +193,7 @@ def parse_assemble(payload: dict[str, Any], *, source: str = "assemble") -> list
         if not title or not venue or starts is None:
             continue
         status = _status(_first(item, ("availability", "status")) or "on_sale")
-        if status == "past":
+        if status not in {"on_sale", "coming_soon"}:
             continue
         ticket = sanitize_url(_first(item, ("tickets_url", "ticket_url", "url", "booking_url")))
         rows.append(
@@ -221,6 +239,12 @@ def _collect_screenings(payload: dict[str, Any]) -> list[dict[str, Any]]:
                     if isinstance(nested, dict):
                         found.extend(_collect_screenings(nested))
     return found
+
+
+_NITEHAWK_SUFFIX = re.compile(
+    r"\s+-\s+\d{1,2}/\d{1,2}/\d{2,4}\s*@\s*\d{1,2}:\d{2}\s*[ap]\.?m\.?$",
+    re.IGNORECASE,
+)
 
 
 class _JsonLdCollector(HTMLParser):
@@ -273,7 +297,8 @@ def parse_nitehawk_html(
             type_list = types if isinstance(types, list) else [types]
             if "ScreeningEvent" not in type_list:
                 continue
-            title = sanitize_display(str(node.get("name") or ""), limit=120)
+            title = sanitize_display(str(node.get("name") or ""), limit=160)
+            title = sanitize_display(_NITEHAWK_SUFFIX.sub("", title), limit=120)
             starts = _as_dt(str(node.get("startDate") or ""))
             if not title or starts is None:
                 continue

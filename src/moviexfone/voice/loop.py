@@ -77,9 +77,13 @@ class ToolLoop:
                 (str(event.get("call_id") or ""), str(event.get("name") or ""), parsed)
             )
             return []
+        if kind == "input_audio_buffer.speech_started":
+            self.rounds = 0
+            return []
         if kind == "response.done":
             if not self._pending:
                 self._audio_bytes = 0
+                self.rounds = 0
                 return []
             return await self._submit()
         return []

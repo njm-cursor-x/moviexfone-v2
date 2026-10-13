@@ -13,14 +13,20 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 
-from moviexfone.api.security import enforce_rate_limit, enforce_tool_secret
+from moviexfone.api.security import (
+    enforce_rate_limit,
+    enforce_tool_secret,
+    voice_connection_allowed,
+)
 from moviexfone.catalog import seed
 from moviexfone.config import Settings
 from moviexfone.db import Database
 from moviexfone.log import configure_logging
 from moviexfone.query import end_call, get_movie_info, search_showtimes
 from moviexfone.service import ask
-from moviexfone.timeutil import now_ny, parse_date_token, upcoming_weekend
+from moviexfone.sources.fetch import geosearch
+from moviexfone.sources.refresh import AssembleRefresher, refresh_assemble
+from moviexfone.timeutil import now_ny, resolve_when
 from moviexfone.voice.bridge import handle_voice_socket
 from moviexfone.voice.prompt import GREETING, system_prompt
 from moviexfone.voice.schemas import tool_schemas
@@ -31,26 +37,43 @@ _FORMATS = {"any", "imax", "dolby", "3d", "70mm", "35mm"}
 
 
 class SearchIn(BaseModel):
-    location: str = Field(min_length=1, max_length=120)
+    location: str | None = Field(default=None, max_length=120)
     movie: str | None = Field(default=None, max_length=160)
     date: str | None = Field(default=None, max_length=40)
     after_time: str | None = Field(default=None, max_length=8)
     format: str = "any"
     page: int = Field(default=1, ge=1, le=10)
 
-    @field_validator("location", "movie", "date", "after_time")
+    @field_validator("location", "movie", "date", "after_time", mode="before")
     @classmethod
-    def no_nulls(cls, value: str | None) -> str | None:
-        if value is not None and "\x00" in value:
+    def no_nulls(cls, value: object) -> str | None:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            value = str(value)
+        if "\x00" in value:
             raise ValueError("invalid character")
-        return value.strip() if isinstance(value, str) else value
+        text = value.strip()
+        return text or None
 
-    @field_validator("format")
+    @field_validator("format", mode="before")
     @classmethod
-    def known_format(cls, value: str) -> str:
-        if value not in _FORMATS:
+    def known_format(cls, value: object) -> str:
+        if value is None or value == "":
+            return "any"
+        text = str(value).strip().lower()
+        if text not in _FORMATS:
             raise ValueError("invalid format")
-        return value
+        return text
+
+    @field_validator("page", mode="before")
+    @classmethod
+    def page_or_one(cls, value: object) -> int:
+        if value is None or value == "":
+            return 1
+        if isinstance(value, bool) or not isinstance(value, int | str):
+            raise ValueError("invalid page")
+        return int(value)
 
 
 class MovieIn(BaseModel):
@@ -77,21 +100,29 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> Any:
         db = Database(settings.db_path)
-        seed(db, settings.data_dir, now=now_ny())
+        seed(db, settings.data_dir, now=now_ny(), include_showtimes=not settings.live_data)
+        refresher: AssembleRefresher | None = None
         if settings.live_data:
             from moviexfone.catalog import refresh_live
 
             refresh_live(db, now=now_ny())
+            refresher = AssembleRefresher(db)
+            refresher.start()
         app.state.db = db
         app.state.settings = settings
+        app.state.refresher = refresher
         from moviexfone.api.security import RateLimiter
 
         app.state.limiter = RateLimiter(settings.rate_limit_per_minute)
         if settings.bind not in {"127.0.0.1", "localhost"} and not settings.tool_secret:
             log.warning("tool endpoints are open and the server is not bound to localhost")
         log.info("ready voice_mode=%s live_data=%s", settings.voice_mode, settings.live_data)
-        yield
-        db.close()
+        try:
+            yield
+        finally:
+            if refresher is not None:
+                refresher.stop()
+            db.close()
 
     app = FastAPI(title="MovieXFone", version="0.1.0", lifespan=lifespan)
     app.add_middleware(
@@ -109,10 +140,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         response.headers["Referrer-Policy"] = "no-referrer"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Cache-Control"] = "no-store"
-        response.headers["Content-Security-Policy"] = (
-            "default-src 'self'; script-src 'self'; style-src 'self'; "
-            "connect-src 'self'; img-src 'self' data:; media-src 'self' blob:"
-        )
+        if not request.url.path.startswith(("/docs", "/redoc", "/openapi.json")):
+            response.headers["Content-Security-Policy"] = (
+                "default-src 'self'; script-src 'self'; style-src 'self'; "
+                "connect-src 'self'; img-src 'self' data:; media-src 'self' blob:"
+            )
         return response
 
     static_dir = _static_dir()
@@ -157,14 +189,29 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         runs = [
             dict(row)
             for row in db.query(
-                "SELECT source, started_at, ok, showtimes, error FROM ingest_run ORDER BY id DESC LIMIT 5"
+                """SELECT source, started_at, finished_at, ok, showtimes, error
+                   FROM ingest_run ORDER BY id DESC LIMIT 20"""
             )
         ]
+        latest: dict[str, dict[str, Any]] = {}
+        for run in reversed(runs):
+            latest[str(run["source"])] = run
+        by_source = {str(row["source"]): row for row in counts}
         return {
             "open_theaters": open_count["n"] if open_count else 0,
             "covered_theaters": covered["n"] if covered else 0,
             "sources": counts,
-            "recent_runs": runs,
+            "recent_runs": runs[:8],
+            "by_source": {
+                name: {
+                    "showtimes": by_source.get(name, {}).get("showtimes", 0),
+                    "theaters": by_source.get(name, {}).get("theaters", 0),
+                    "last_fetch_at": run.get("finished_at") or run.get("started_at"),
+                    "last_ok": bool(run.get("ok")),
+                    "last_error": run.get("error"),
+                }
+                for name, run in latest.items()
+            },
         }
 
     @app.post("/v1/tools/search_showtimes")
@@ -216,7 +263,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         db: Database = Depends(db_dep),
     ) -> JSONResponse:
         enforce_rate_limit(request)
-        return JSONResponse(ask(db, body.text, now=now_ny(), page=body.page))
+        _require_demo_access(request, settings)
+        return JSONResponse(ask(db, body.text, now=now_ny(), page=body.page, geocode=_geocode))
 
     @app.post("/admin/refresh")
     def admin_refresh(request: Request, db: Database = Depends(db_dep)) -> dict[str, Any]:
@@ -227,12 +275,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             and request.client.host not in {"127.0.0.1", "::1", "testclient"}
         ):
             raise HTTPException(status_code=401, detail="unauthorized")
-        summary: dict[str, Any] = dict(seed(db, settings.data_dir, now=now_ny()))
+        summary: dict[str, Any] = dict(
+            seed(db, settings.data_dir, now=now_ny(), include_showtimes=not settings.live_data)
+        )
         if settings.live_data:
             from moviexfone.catalog import refresh_live
 
             summary["live"] = refresh_live(db, now=now_ny())
-        return {"ok": True, "reloaded_fixtures": True, **summary}
+            summary["assemble"] = refresh_assemble(db, now=now_ny())
+        return {"ok": True, "reloaded_fixtures": not settings.live_data, **summary}
 
     @app.websocket("/ws/voice")
     async def voice(websocket: WebSocket) -> None:
@@ -253,27 +304,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
 def _search_from_body(db: Database, body: SearchIn) -> dict[str, Any]:
     now = now_ny()
-    raw = (body.date or "today").strip()
-    if "weekend" in raw.lower():
-        dates = [day.isoformat() for day in upcoming_weekend(now.date())]
-        spoken = "this weekend"
-    else:
-        parsed = parse_date_token(raw, now.date())
-        if parsed is None and len(raw) == 10 and raw[4] == "-":
-            dates = [raw]
-            spoken = raw
-        elif parsed is None:
-            dates = [now.date().isoformat()]
-            spoken = "today"
-        else:
-            dates = [parsed.isoformat()]
-            lowered = raw.lower()
-            if lowered == "tonight":
-                spoken = "tonight"
-            elif lowered == "today":
-                spoken = "today"
-            else:
-                spoken = parsed.strftime("%A")
+    if not body.location:
+        return {
+            "error": "location_not_found",
+            "speak": "Which neighborhood or theater?",
+            "ask": "Which neighborhood or theater?",
+        }
+    dates, spoken, unclear = resolve_when(body.date, now)
     return search_showtimes(
         db,
         location=body.location,
@@ -284,7 +321,31 @@ def _search_from_body(db: Database, body: SearchIn) -> dict[str, Any]:
         page=body.page,
         now=now,
         date_spoken=spoken,
+        geocode=_geocode,
+        date_unclear=unclear,
     )
+
+
+def _geocode(text: str) -> dict[str, Any] | None:
+    try:
+        return geosearch(text)
+    except Exception as exc:
+        log.info("geosearch failed: %s", type(exc).__name__)
+        return None
+
+
+def _require_demo_access(request: Request, settings: Settings) -> None:
+    host = request.client.host if request.client else None
+    token = request.headers.get("x-moviexfone-secret")
+    if voice_connection_allowed(
+        origin=request.headers.get("origin"),
+        host=host,
+        token=token,
+        allowed_origins=settings.cors_origins,
+        secret=settings.tool_secret,
+    ):
+        return
+    raise HTTPException(status_code=403, detail="origin not allowed")
 
 
 def _static_dir() -> Path | None:

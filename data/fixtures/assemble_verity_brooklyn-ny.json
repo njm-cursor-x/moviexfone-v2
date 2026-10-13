@@ -1,0 +1,113 @@
+{
+  "_meta": {
+    "trimmed_from": "live Assemble capture 2026-10-13",
+    "film_id": "1283515",
+    "city": "brooklyn-ny",
+    "note": "Title is not on each screening. film_id 1283515 is Verity."
+  },
+  "film_id": "1283515",
+  "city": "brooklyn-ny",
+  "screening_count": 5,
+  "screenings": [
+    {
+      "venue": {
+        "id": "39b31520-82a7-4275-a396-af9918139354",
+        "name": "Alamo Drafthouse Cinema Downtown Brooklyn",
+        "address": "445 Albee Square W 4th floor",
+        "city": "Brooklyn",
+        "state": "NY",
+        "postal_code": "11201",
+        "country": "US",
+        "latitude": null,
+        "longitude": null,
+        "website": "https://drafthouse.com/nyc/theater/downtown-brooklyn"
+      },
+      "date": "2026-10-13",
+      "starts_at": "2026-10-13T18:45",
+      "url": "https://drafthouse.com/nyc/show/verity?cinemaId=2101&sessionId=139235",
+      "availability": "on_sale",
+      "note": null,
+      "scarcity": null
+    },
+    {
+      "venue": {
+        "id": "88977b45-f2cb-459c-bf21-0deca3db4fbc",
+        "name": "Bay Ridge Alpine Cinemas",
+        "address": "6817 Fifth Ave.",
+        "city": "Brooklyn",
+        "state": "NY",
+        "postal_code": "11220",
+        "country": "US",
+        "latitude": null,
+        "longitude": null,
+        "website": "https://www.alpinecinemas.com/"
+      },
+      "date": "2026-10-13",
+      "starts_at": "2026-10-13T19:00",
+      "url": "https://www.fandango.com/redirect.aspx?a=13058&mid=240033&tid=AABTF&date=2026-10-13%2B19%3A00",
+      "availability": "on_sale",
+      "note": null,
+      "scarcity": null
+    },
+    {
+      "venue": {
+        "id": "2f4f71d6-149a-4aef-96a5-9680fda162a1",
+        "name": "Regal UA Sheepshead Bay Stadium 14 IMAX & RPX",
+        "address": "3907 Shore Pkwy.",
+        "city": "Brooklyn",
+        "state": "NY",
+        "postal_code": "11235",
+        "country": "US",
+        "latitude": null,
+        "longitude": null,
+        "website": "https://www.regmovies.com/theatres/regal-ua-sheepshead-bay-imax-rpx/1159#/"
+      },
+      "date": "2026-10-13",
+      "starts_at": "2026-10-13T19:00",
+      "url": "https://www.regmovies.com/movies/verity-HO00018457",
+      "availability": "on_sale",
+      "note": null,
+      "scarcity": null
+    },
+    {
+      "venue": {
+        "id": "ec3c3e34-8253-44cd-bbd0-5108b562288b",
+        "name": "Kent Theatre",
+        "address": "1170 Coney Island Ave.",
+        "city": "Brooklyn",
+        "state": "NY",
+        "postal_code": "11230",
+        "country": "US",
+        "latitude": null,
+        "longitude": null,
+        "website": "https://www.facebook.com/pages/Kent-Triplex/120335414645072"
+      },
+      "date": "2026-10-13",
+      "starts_at": "2026-10-13T19:30",
+      "url": "https://www.fandango.com/redirect.aspx?a=13058&mid=240033&tid=AAEEZ&date=2026-10-13%2B19%3A30",
+      "availability": "on_sale",
+      "note": null,
+      "scarcity": null
+    },
+    {
+      "venue": {
+        "id": "7575e140-0837-4f63-972c-b92149b83d01",
+        "name": "Cobble Hill Cinema",
+        "address": "265 Court St.",
+        "city": "Brooklyn",
+        "state": "NY",
+        "postal_code": "11231",
+        "country": "US",
+        "latitude": null,
+        "longitude": null,
+        "website": "https://www.cobblehilltheatre.com"
+      },
+      "date": "2026-10-13",
+      "starts_at": "2026-10-13T19:40",
+      "url": "https://www.fandango.com/redirect.aspx?a=13058&mid=240033&tid=AAEEY&date=2026-10-13%2B19%3A40",
+      "availability": "on_sale",
+      "note": null,
+      "scarcity": null
+    }
+  ]
+}

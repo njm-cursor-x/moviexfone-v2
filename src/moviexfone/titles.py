@@ -8,7 +8,11 @@ from difflib import SequenceMatcher
 
 
 def normalize_title(text: str) -> str:
+    """Fold years, anniversary tags, and punctuation so one film is one title."""
     lowered = text.lower().replace("&", " and ").replace("'", "").replace("’", "")
+    lowered = re.sub(r"\([^)]*\b(?:19|20)\d{2}\b[^)]*\)", " ", lowered)
+    lowered = re.sub(r"\b(?:19|20)\d{2}\b", " ", lowered)
+    lowered = re.sub(r"\b\d+(?:st|nd|rd|th)\s+anniversary\b", " ", lowered)
     lowered = re.sub(r"[^a-z0-9\s]", " ", lowered)
     lowered = re.sub(r"\b(the|a|an)\b", " ", lowered)
     return re.sub(r"\s+", " ", lowered).strip()
@@ -45,7 +49,7 @@ def score_title(query: str, candidate: str) -> float:
     if left == right:
         return 1.0
     ratio = SequenceMatcher(None, left, right).ratio()
-    if len(left) >= 5 and len(right) >= 5 and _levenshtein(left, right) <= 2:
+    if len(left) >= 5 and len(right) >= 5 and _levenshtein(left, right) <= 3:
         ratio = max(ratio, 0.86)
     if left in right or right in left:
         contain = min(len(left), len(right)) / max(len(left), len(right))
