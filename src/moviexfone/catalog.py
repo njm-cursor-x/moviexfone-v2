@@ -6,6 +6,8 @@ import csv
 import json
 import logging
 import re
+import time
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -63,6 +65,9 @@ def seed(
     """
     with db.transaction():
         remember_film_ids(db)
+        kept_movies, kept_aliases = (
+            ([], []) if include_showtimes else _movies_with_future_showtimes(db, now)
+        )
         if include_showtimes:
             db.execute("DELETE FROM showtime")
         db.execute("DELETE FROM movie_alias")
@@ -72,6 +77,7 @@ def seed(
         theater_count = _load_theaters(db, data)
         movie_count = _load_movies(db, data)
         restore_film_ids(db)
+        _restore_movies(db, kept_movies, kept_aliases)
         if include_showtimes:
             shows = _fixture_shows(data)
             _apply(db, shows["assemble"], mode="insert", now=FIXTURE_FETCHED_AT)
@@ -89,6 +95,60 @@ def seed(
             ),
         )
     return {"theaters": theater_count, "movies": movie_count, "showtimes": _show_count(db)}
+
+
+def _movies_with_future_showtimes(
+    db: Database, now: datetime
+) -> tuple[list[tuple[object, ...]], list[tuple[str, str]]]:
+    """Movies that still have an upcoming show. A failed refetch must not drop them."""
+    cutoff = iso_ny(now)
+    movies: list[tuple[object, ...]] = [
+        (
+            str(row["movie_id"]),
+            str(row["title"]),
+            row["year"],
+            row["rating"],
+            row["runtime_min"],
+            row["synopsis_short"],
+            row["tmdb_id"],
+        )
+        for row in db.query(
+            """SELECT DISTINCT m.movie_id, m.title, m.year, m.rating, m.runtime_min,
+                      m.synopsis_short, m.tmdb_id
+               FROM movie m
+               JOIN showtime s ON s.movie_id = m.movie_id
+               WHERE s.starts_at >= ?""",
+            (cutoff,),
+        )
+    ]
+    if not movies:
+        return [], []
+    ids = {str(item[0]) for item in movies}
+    aliases = [
+        (str(row["movie_id"]), str(row["alias"]))
+        for row in db.query("SELECT movie_id, alias FROM movie_alias")
+        if str(row["movie_id"]) in ids
+    ]
+    return movies, aliases
+
+
+def _restore_movies(
+    db: Database,
+    movies: list[tuple[object, ...]],
+    aliases: list[tuple[str, str]],
+) -> None:
+    if movies:
+        db.executemany(
+            """INSERT OR IGNORE INTO movie
+               (movie_id, title, year, rating, runtime_min, synopsis_short, tmdb_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            movies,
+        )
+    if aliases:
+        db.executemany(
+            "INSERT OR IGNORE INTO movie_alias (movie_id, alias) VALUES (?, ?)",
+            aliases,
+        )
 
 
 def _load_theaters(db: Database, data: Path) -> int:
@@ -625,13 +685,42 @@ def load_places() -> list[PlaceRef]:
 
 
 # Re-export for type checkers that want the date helper used by tests.
-def refresh_live(db: Database, *, now: datetime) -> dict[str, object]:
-    """Pull first-party feeds. Failures are recorded and never raised."""
+def _fetch_retrying(
+    fetch: Callable[[], list[IncomingShow]],
+    *,
+    attempts: int,
+    retry_sleep: float,
+) -> list[IncomingShow]:
+    """Call fetch until it returns. Sleep grows between tries. The last error is re-raised."""
+    delay = retry_sleep
+    last: Exception | None = None
+    for attempt in range(max(1, attempts)):
+        try:
+            return fetch()
+        except Exception as exc:
+            last = exc
+            if attempt + 1 >= attempts:
+                break
+            if delay:
+                time.sleep(delay)
+            delay = min(delay * 2, 8.0) if delay else 0.0
+    assert last is not None
+    raise last
+
+
+def refresh_live(
+    db: Database,
+    *,
+    now: datetime,
+    attempts: int = 3,
+    retry_sleep: float = 1.0,
+) -> dict[str, object]:
+    """Pull first-party feeds. A failed fetch leaves the previous rows in place."""
     from moviexfone.sources.fetch import fetch_alamo, fetch_nitehawk
 
     report: dict[str, object] = {}
     try:
-        rows = fetch_alamo()
+        rows = _fetch_retrying(fetch_alamo, attempts=attempts, retry_sleep=retry_sleep)
         with db.transaction():
             count = _apply(db, rows, mode="theaters", now=now)
             record_ingest(db, source="alamo_json", now=now, ok=True, showtimes=count, error=None)
@@ -643,7 +732,7 @@ def refresh_live(db: Database, *, now: datetime) -> dict[str, object]:
             db, source="alamo_json", now=now, ok=False, showtimes=0, error=type(exc).__name__
         )
     try:
-        rows = fetch_nitehawk()
+        rows = _fetch_retrying(fetch_nitehawk, attempts=attempts, retry_sleep=retry_sleep)
         with db.transaction():
             _apply(db, rows, mode="dates", now=now)
             stored = db.query_one(

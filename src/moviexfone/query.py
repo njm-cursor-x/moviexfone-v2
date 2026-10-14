@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, time, timedelta
 from typing import Any
 
@@ -109,17 +109,28 @@ def search_showtimes(
     before = parse_clock(before_time) if before_time else None
     after = tonight_after(now.astimezone(NY).time(), after, date_spoken)
     rows = _rows(db)
-    matched = [
-        row
-        for row in rows
-        if row.business_date in dates
-        and (movie_id is None or row.movie_id == movie_id)
-        and _format_ok(row, format_name)
-        and row.starts_at >= now
-        and show_matches_after(row.local_t, after)
-        and (before is None or row.local_t < before)
-        and _in_resolution(row, resolution)
-    ]
+
+    def _matched(where: Resolution) -> list[_Row]:
+        return [
+            row
+            for row in rows
+            if row.business_date in dates
+            and (movie_id is None or row.movie_id == movie_id)
+            and _format_ok(row, format_name)
+            and row.starts_at >= now
+            and show_matches_after(row.local_t, after)
+            and (before is None or row.local_t < before)
+            and _in_resolution(row, where)
+        ]
+
+    matched = _matched(resolution)
+    if (
+        not matched
+        and resolution.kind == "place"
+        and (resolution.radius_mi is None or resolution.radius_mi < 2)
+    ):
+        resolution = replace(resolution, radius_mi=2.0)
+        matched = _matched(resolution)
     if format_name not in {"", "any"} and not matched:
         return _format_gap(db, resolution, format_name, date_spoken, dates)
 
@@ -699,10 +710,22 @@ def _other_day(
     else:
         when = first.starts_at.astimezone(NY).strftime("%A")
     title = spoken_title(movie_title)
-    clock = spoken_time(first.local_t)
-    if not clock.endswith("."):
-        clock = f"{clock}."
-    speak = f"{title} plays {when} at {clock} at {first.theater}."
+    same_day = sorted(
+        (
+            row
+            for row in upcoming
+            if row.theater_id == first.theater_id and row.business_date == first.business_date
+        ),
+        key=lambda row: row.local_t,
+    )[:3]
+    clocks = [spoken_time(row.local_t) for row in same_day]
+    if len(clocks) == 1:
+        listed = clocks[0]
+    elif len(clocks) == 2:
+        listed = f"{clocks[0]} and {clocks[1]}"
+    else:
+        listed = f"{clocks[0]}, {clocks[1]}, and {clocks[2]}"
+    speak = f"{title} plays {when} at {listed} at {first.theater}."
     return {
         "resolved_location": _resolved_json(resolution),
         "date_spoken": date_spoken,
@@ -711,7 +734,7 @@ def _other_day(
         "nearest_alternative": {
             "theater": first.theater,
             "movie": title,
-            "times": [display_time(first.local_t)],
+            "times": [display_time(row.local_t) for row in same_day],
             "ticket_url": first.ticket_url,
         },
         "speak": speak,
@@ -771,11 +794,32 @@ def _later_tonight(
     ]
     if not upcoming:
         return None
-    first = min(upcoming, key=lambda row: row.starts_at)
-    speak = _clock_sentence(
-        f"Nothing else tonight. Tomorrow the first show is {spoken_title(first.movie)} at",
-        spoken_time(first.local_t),
-    )
+    picks: list[_Row] = []
+    seen: set[str] = set()
+    for row in sorted(upcoming, key=lambda item: item.starts_at):
+        if movie_id is None and row.theater_id in seen:
+            continue
+        seen.add(row.theater_id)
+        picks.append(row)
+        if len(picks) == (1 if movie_id is not None else 3):
+            break
+    if len(picks) == 1:
+        first = picks[0]
+        speak = _clock_sentence(
+            f"Nothing else tonight. Tomorrow the first show is {spoken_title(first.movie)} at",
+            spoken_time(first.local_t),
+        )
+    else:
+        bits = [
+            f"{spoken_title(row.movie)} at {spoken_time(row.local_t)} at {row.theater}"
+            for row in picks
+        ]
+        if len(bits) == 2:
+            listed = f"{bits[0]} and {bits[1]}"
+        else:
+            listed = ", ".join(bits[:-1]) + f", and {bits[-1]}"
+        speak = f"Nothing else tonight. Tomorrow the first shows nearby are {listed}."
+        first = picks[0]
     return {
         "resolved_location": _resolved_json(resolution),
         "date_spoken": date_spoken,
