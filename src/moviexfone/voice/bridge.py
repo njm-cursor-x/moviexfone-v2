@@ -7,6 +7,7 @@ import contextlib
 import json
 import logging
 import threading
+import time
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -188,6 +189,13 @@ async def _run_live(
             await websocket.send_json(
                 {"type": "session.ready", "mode": "live", "greeting": GREETING}
             )
+            last_sound = time.monotonic()
+            silence_prompted = False
+
+            def heard() -> None:
+                nonlocal last_sound
+                last_sound = time.monotonic()
+
             loop = ToolLoop(
                 lambda name, args: _execute(
                     db, name, args, live_data=settings.live_data, refresher=refresher
@@ -206,6 +214,7 @@ async def _run_live(
                             await websocket.close(code=1009)
                             return
                         received += len(data)
+                        heard()
                         if received > _session_budget(settings.max_session_seconds):
                             await websocket.send_json(
                                 {
@@ -251,6 +260,8 @@ async def _run_live(
                         continue
                     event = json.loads(raw)
                     kind = event.get("type")
+                    if kind == "response.output_audio.delta":
+                        heard()
                     for outbound_event in _client_events(event):
                         await websocket.send_json(outbound_event)
                     if kind == "conversation.item.input_audio_transcription.completed":
@@ -291,8 +302,31 @@ async def _run_live(
                             if isinstance(payload, dict) and payload.get("speak"):
                                 await websocket.send_json({"type": "showtimes", "payload": payload})
 
+            async def silence_once() -> None:
+                nonlocal silence_prompted
+                while not silence_prompted:
+                    await asyncio.sleep(5)
+                    if time.monotonic() - last_sound < 40:
+                        continue
+                    silence_prompted = True
+                    await upstream.send(
+                        json.dumps(
+                            {
+                                "type": "conversation.item.create",
+                                "item": {
+                                    "type": "force_message",
+                                    "role": "assistant",
+                                    "interruptible": True,
+                                    "content": [{"type": "output_text", "text": "Anything else?"}],
+                                },
+                            }
+                        )
+                    )
+                    return
+
             client_task = asyncio.create_task(client_to_upstream())
             upstream_task = asyncio.create_task(upstream_to_client())
+            silence_task = asyncio.create_task(silence_once())
             limit = asyncio.create_task(asyncio.sleep(settings.max_session_seconds))
             try:
                 done, _pending = await asyncio.wait(
@@ -310,9 +344,11 @@ async def _run_live(
                         log.info("time cap close")
             finally:
                 release_slot()
-                for task in (client_task, upstream_task, limit):
+                for task in (client_task, upstream_task, silence_task, limit):
                     task.cancel()
-                await asyncio.gather(client_task, upstream_task, limit, return_exceptions=True)
+                await asyncio.gather(
+                    client_task, upstream_task, silence_task, limit, return_exceptions=True
+                )
                 with contextlib.suppress(Exception):
                     await asyncio.wait_for(upstream.close(), timeout=1)
     finally:
@@ -336,7 +372,7 @@ def _session_body(db: Database) -> dict[str, Any]:
     return {
         "voice": "rex",
         "instructions": system_prompt(now_ny()),
-        "turn_detection": {"type": "server_vad", "idle_timeout_ms": 120000},
+        "turn_detection": {"type": "server_vad"},
         "reasoning": {"effort": "none"},
         "tools": tool_schemas(),
         "replace": {"Nitehawk": "Night hawk", "IMAX": "eye max"},
@@ -407,6 +443,9 @@ async def _execute(
         after = body.after_time or (
             window.after.strftime("%H:%M") if window.after is not None else None
         )
+        before = body.before_time or (
+            window.before.strftime("%H:%M") if window.before is not None else None
+        )
         if refresher is not None and body.movie:
             refresher.consider(body.movie)
         if not body.location:
@@ -417,7 +456,7 @@ async def _execute(
             movie=body.movie,
             dates=dates,
             after_time=after,
-            before_time=window.before.strftime("%H:%M") if window.before else None,
+            before_time=before,
             format_name=body.format,
             page=body.page,
             now=now,

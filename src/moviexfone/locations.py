@@ -261,6 +261,8 @@ def _local_place(query: str) -> Resolution | None:
     hit = lookup_local(query)
     if hit is None:
         return None
+    if hit.get("ask"):
+        return Resolution(kind="not_found", label=query.strip())
     lat = hit["lat"]
     lng = hit["lng"]
     if not isinstance(lat, float) or not isinstance(lng, float):
@@ -291,6 +293,10 @@ def _from_geocode(query: str, geocode: Geocoder | None) -> Resolution:
     if borough is None:
         return Resolution(kind="not_found", label=query.strip())
     raw_label = str(hit.get("label") or query.strip())
+    from moviexfone.localgeo import is_borough_label
+
+    if is_borough_label(raw_label) or is_borough_label(query):
+        return Resolution(kind="not_found", label=query.strip())
     letters = [char for char in raw_label if char.isalpha()]
     upper = sum(char.isupper() for char in letters)
     if letters and upper / len(letters) > 0.7:

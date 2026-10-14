@@ -1,0 +1,454 @@
+name,lat,lng,lines,borough
+1 Av,40.730953,-73.981628,L,Manhattan
+103 St,40.799446,-73.968379,,Manhattan
+103 St,40.790600,-73.947478,,Manhattan
+103 St,40.796092,-73.961454,A,Manhattan
+103 St-Corona Plaza,40.749865,-73.862700,,Queens
+104 St,40.681711,-73.837683,A,Queens
+104 St,40.695178,-73.844330,J,Queens
+110 St,40.795020,-73.944250,,Manhattan
+111 St,40.751730,-73.855334,,Queens
+111 St,40.684331,-73.832163,A,Queens
+111 St,40.697418,-73.836345,J,Queens
+116 St,40.802098,-73.949625,,Manhattan
+116 St,40.798629,-73.941617,,
+116 St,40.805085,-73.954882,A,Manhattan
+116 St-Columbia University,40.807722,-73.964110,,Manhattan
+121 St,40.700492,-73.828294,J,Queens
+125 St,40.815581,-73.958372,,Manhattan
+125 St,40.807754,-73.945495,,Manhattan
+125 St,40.804138,-73.937594,,
+125 St,40.811109,-73.952343,A,Manhattan
+135 St,40.814229,-73.940770,,Manhattan
+135 St,40.817894,-73.947649,A,Manhattan
+137 St-City College,40.822008,-73.953676,,Manhattan
+138 St-Grand Concourse,40.813224,-73.929849,,Bronx
+14 St,40.737826,-74.000201,,Manhattan
+14 St / 6 Av,40.737781,-73.996498,DL,Manhattan
+14 St / 8 Av,40.740335,-74.002134,AL,Manhattan
+14 St-Union Sq,40.735066,-73.990416,LR,Manhattan
+145 St,40.826551,-73.950360,,Manhattan
+145 St,40.820421,-73.936245,,Manhattan
+145 St,40.824783,-73.944216,AD,Manhattan
+149 St-Grand Concourse,40.818393,-73.927034,,Bronx
+15 St-Prospect Park,40.660365,-73.979493,F,Brooklyn
+155 St,40.830518,-73.941514,A,Manhattan
+155 St,40.830135,-73.938209,D,Manhattan
+157 St,40.834041,-73.944890,,Manhattan
+161 St-Yankee Stadium,40.827950,-73.925741,D,Bronx
+163 St-Amsterdam Av,40.836013,-73.939892,A,Manhattan
+167 St,40.835537,-73.921400,,Bronx
+167 St,40.833771,-73.918440,D,Bronx
+168 St-Washington Hts,40.840637,-73.939847,A,Manhattan
+169 St,40.710470,-73.793604,F,Queens
+170 St,40.840075,-73.917791,,Bronx
+170 St,40.839306,-73.913400,D,Bronx
+174 St,40.837288,-73.887734,,Bronx
+174-175 Sts,40.845900,-73.910136,D,Bronx
+175 St,40.847391,-73.939704,A,Manhattan
+176 St,40.848480,-73.911794,,Bronx
+18 Av,40.607954,-74.001736,B,Brooklyn
+18 Av,40.629755,-73.976971,F,Brooklyn
+18 Av,40.620671,-73.990414,N,Brooklyn
+18 St,40.741040,-73.997871,,Manhattan
+181 St,40.849505,-73.933596,,Manhattan
+181 St,40.851695,-73.937969,A,Manhattan
+182-183 Sts,40.856093,-73.900741,D,Bronx
+183 St,40.858407,-73.903879,,Bronx
+190 St,40.859022,-73.934180,A,Manhattan
+191 St,40.855225,-73.929412,,Manhattan
+2 Av,40.723402,-73.989938,F,Manhattan
+20 Av,40.604556,-73.998168,B,Brooklyn
+20 Av,40.617410,-73.985026,N,Brooklyn
+207 St,40.864621,-73.918822,,Manhattan
+21 St,40.744065,-73.949724,G,Queens
+21 St-Queensbridge,40.754203,-73.942836,B,
+215 St,40.869444,-73.915279,,Manhattan
+219 St,40.883895,-73.862633,,Bronx
+225 St,40.888022,-73.860341,,Bronx
+23 St,40.744081,-73.995657,,Manhattan
+23 St,40.739864,-73.986599,,Manhattan
+23 St,40.745906,-73.998041,A,Manhattan
+23 St,40.742878,-73.992821,D,Manhattan
+23 St,40.741303,-73.989344,R,Manhattan
+231 St,40.878856,-73.904834,,Bronx
+233 St,40.893193,-73.857473,,Bronx
+238 St,40.884667,-73.900870,,Bronx
+25 Av,40.597704,-73.986829,B,Brooklyn
+25 St,40.660397,-73.998091,R,Brooklyn
+28 St,40.747215,-73.993365,,Manhattan
+28 St,40.743070,-73.984264,,Manhattan
+28 St,40.745494,-73.988691,R,Manhattan
+3 Av,40.732849,-73.986122,L,Manhattan
+3 Av-138 St,40.810476,-73.926138,,Bronx
+3 Av-149 St,40.816109,-73.917757,,Bronx
+30 Av,40.766779,-73.921479,R,Queens
+33 St,40.746081,-73.982076,,Manhattan
+33 St-Rawson St,40.744587,-73.930997,,Queens
+34 St-Herald Sq,40.749643,-73.987887,DR,Manhattan
+34 St-Hudson Yards,40.755882,-74.001910,,Manhattan
+34 St-Penn Station,40.750373,-73.991057,,Manhattan
+34 St-Penn Station,40.752287,-73.993391,A,Manhattan
+36 Av,40.756804,-73.929575,R,Queens
+36 St,40.752039,-73.928781,G,Queens
+36 St,40.655144,-74.003549,R,Brooklyn
+39 Av-Dutch Kills,40.752882,-73.932755,R,Queens
+4 Av-9 St,40.670559,-73.989041,FR,Brooklyn
+40 St-Lowery St,40.743781,-73.924016,,Queens
+42 St-Bryant Pk,40.754222,-73.984569,D,Manhattan
+42 St-Port Authority Bus Terminal,40.757308,-73.989735,A,Manhattan
+45 St,40.648939,-74.010006,R,Brooklyn
+46 St,40.756312,-73.913333,G,Queens
+46 St-Bliss St,40.743132,-73.918435,,Queens
+47-50 Sts-Rockefeller Ctr,40.758663,-73.981329,D,Manhattan
+49 St,40.759901,-73.984139,R,Manhattan
+5 Av,40.753821,-73.981963,,Manhattan
+5 Av/53 St,40.760167,-73.975224,F,Manhattan
+5 Av/59 St,40.764811,-73.973347,R,Manhattan
+50 St,40.761728,-73.983849,,Manhattan
+50 St,40.762456,-73.985984,A,Manhattan
+50 St,40.636260,-73.994791,B,Brooklyn
+51 St / Lexington Av/53 St,40.757329,-73.970487,F,Manhattan
+52 St,40.744149,-73.912549,,Queens
+53 St,40.645069,-74.014034,R,Brooklyn
+55 St,40.631435,-73.995476,B,Brooklyn
+57 St,40.763972,-73.977450,B,Manhattan
+57 St-7 Av,40.764664,-73.980658,R,Manhattan
+59 St,40.641362,-74.017881,R,Brooklyn
+59 St-Columbus Circle,40.768271,-73.981832,A,Manhattan
+61 St-Woodside,40.745630,-73.902984,,Queens
+62 St / New Utrecht Av,40.625657,-73.996624,BN,Brooklyn
+63 Dr-Rego Park,40.729846,-73.861604,G,Queens
+65 St,40.749669,-73.898453,G,Queens
+66 St-Lincoln Center,40.773440,-73.982209,,Manhattan
+67 Av,40.726523,-73.852719,G,Queens
+68 St-Hunter College,40.768141,-73.963870,,Manhattan
+69 St,40.746325,-73.896403,,Queens
+7 Av,40.762862,-73.981637,D,Manhattan
+7 Av,40.677050,-73.972367,D,Brooklyn
+7 Av,40.666271,-73.980305,F,Brooklyn
+71 St,40.619589,-73.998864,B,Brooklyn
+72 St,40.778453,-73.981970,,Manhattan
+72 St,40.775594,-73.976410,A,Manhattan
+72 St,40.768799,-73.958424,Q,Manhattan
+75 Av,40.718331,-73.837324,F,Queens
+75 St-Elderts Ln,40.691324,-73.867139,J,Queens
+77 St,40.773620,-73.959874,,Manhattan
+77 St,40.629742,-74.025510,R,Brooklyn
+79 St,40.783934,-73.979917,,Manhattan
+79 St,40.613501,-74.000610,B,Brooklyn
+8 Av,40.635064,-74.011719,N,Brooklyn
+8 St-NYU,40.730328,-73.992629,R,Manhattan
+80 St,40.679371,-73.858992,A,Queens
+81 St-Museum of Natural History,40.781433,-73.972143,A,Manhattan
+82 St-Jackson Hts,40.747659,-73.883697,,Queens
+85 St-Forest Pkwy,40.692435,-73.860010,J,Queens
+86 St,40.788644,-73.976218,,Manhattan
+86 St,40.779492,-73.955589,,Manhattan
+86 St,40.785868,-73.968916,A,Manhattan
+86 St,40.592721,-73.978230,N,Brooklyn
+86 St,40.777891,-73.951787,Q,Manhattan
+86 St,40.622687,-74.028398,R,Brooklyn
+88 St,40.679843,-73.851470,A,Queens
+9 Av,40.646292,-73.994324,B,Brooklyn
+90 St-Elmhurst Av,40.748408,-73.876613,,Queens
+96 St,40.793919,-73.972323,,Manhattan
+96 St,40.785672,-73.951070,,Manhattan
+96 St,40.791642,-73.964696,A,Manhattan
+96 St,40.784318,-73.947152,Q,Manhattan
+Alabama Av,40.676992,-73.898654,J,Queens
+Allerton Av,40.865462,-73.867352,,Bronx
+Annadale,40.540460,-74.178217,S,Staten Island
+Aqueduct Racetrack,40.668234,-73.834058,H,Queens
+Aqueduct-N Conduit Av,40.668234,-73.834058,H,Queens
+Arthur Kill,40.516578,-74.242096,S,Staten Island
+Astor Pl,40.730054,-73.991070,,Manhattan
+Astoria Blvd,40.770258,-73.917843,R,Queens
+Astoria-Ditmars Blvd,40.775036,-73.912034,R,Queens
+Atlantic Av,40.675345,-73.903097,L,Queens
+Atlantic Av-Barclays Ctr,40.684162,-73.977789,DR,Brooklyn
+Avenue H,40.629270,-73.961639,D,Brooklyn
+Avenue I,40.625322,-73.976127,F,Brooklyn
+Avenue J,40.625039,-73.960803,D,Brooklyn
+Avenue M,40.617618,-73.959399,D,Brooklyn
+Avenue N,40.615140,-73.974197,F,Brooklyn
+Avenue P,40.608944,-73.973022,F,Brooklyn
+Avenue U,40.599300,-73.955929,D,Brooklyn
+Avenue U,40.596063,-73.973357,F,Brooklyn
+Avenue U,40.597473,-73.979137,N,Brooklyn
+Avenue X,40.589620,-73.974250,F,Brooklyn
+Bay 50 St,40.588841,-73.983765,B,Brooklyn
+Bay Pkwy,40.601875,-73.993728,B,Brooklyn
+Bay Pkwy,40.620769,-73.975264,F,Brooklyn
+Bay Pkwy,40.611815,-73.981848,N,Brooklyn
+Bay Ridge Av,40.634967,-74.023377,R,Brooklyn
+Bay Ridge-95 St,40.616622,-74.030876,R,Brooklyn
+Bay Terrace,40.556400,-74.136907,S,Staten Island
+Baychester Av,40.878663,-73.838591,,Bronx
+Beach 105 St,40.583209,-73.827559,H,Queens
+Beach 25 St,40.600066,-73.761353,H,Queens
+Beach 36 St,40.595398,-73.768175,H,Queens
+Beach 44 St,40.592943,-73.776013,H,Queens
+Beach 60 St,40.592374,-73.788522,H,Queens
+Beach 67 St,40.590927,-73.796924,H,Queens
+Beach 90 St,40.588034,-73.813641,H,Queens
+Beach 98 St,40.585307,-73.820558,H,Queens
+Bedford Av,40.717304,-73.956872,L,Brooklyn
+Bedford Park Blvd,40.873244,-73.887138,D,Bronx
+Bedford Park Blvd-Lehman College,40.873412,-73.890064,,Bronx
+Bedford-Nostrand Avs,40.689627,-73.953522,G,Brooklyn
+Bergen St,40.680829,-73.975098,,Brooklyn
+Bergen St,40.686145,-73.990862,F,Brooklyn
+Beverley Rd,40.644031,-73.964492,D,Brooklyn
+Beverly Rd,40.645098,-73.948959,,Brooklyn
+Bleecker St / Broadway-Lafayette St,40.725606,-73.995431,D,Manhattan
+Bowery,40.720280,-73.993915,M,Manhattan
+Bowling Green,40.704817,-74.014065,,Manhattan
+Briarwood,40.709179,-73.820574,F,Queens
+Brighton Beach,40.577621,-73.961376,D,Brooklyn
+Broad Channel,40.608382,-73.815925,H,Queens
+Broad Channel,40.609014,-73.816024,H,Queens
+Broad St,40.706476,-74.011056,M,Manhattan
+Broadway,40.706092,-73.950308,G,Brooklyn
+Broadway,40.761820,-73.925508,R,Queens
+Broadway Junction,40.678896,-73.904356,AJL,Queens
+Bronx Park East,40.848828,-73.868457,,Bronx
+Brook Av,40.807566,-73.919240,,Bronx
+Brooklyn Bridge-City Hall / Chambers St,40.713154,-74.003766,M,Manhattan
+Buhre Av,40.846810,-73.832569,,Bronx
+Burke Av,40.871356,-73.867164,,Bronx
+Burnside Av,40.853453,-73.907684,,Bronx
+Bushwick Av-Aberdeen St,40.682829,-73.905249,L,Brooklyn
+Canal St,40.722854,-74.006277,,Manhattan
+Canal St,40.718701,-74.000580,MQR,Manhattan
+Canal St,40.720824,-74.005229,A,Manhattan
+Canarsie-Rockaway Pkwy,40.646654,-73.901850,L,Queens
+Carroll St,40.680303,-73.995048,F,Brooklyn
+Castle Hill Av,40.834255,-73.851222,,Bronx
+Cathedral Pkwy (110 St),40.803967,-73.966847,,Manhattan
+Cathedral Pkwy (110 St),40.800603,-73.958161,A,Manhattan
+Central Av,40.697857,-73.927397,M,Brooklyn
+Central Park North (110 St),40.799075,-73.951822,,Manhattan
+Chambers St,40.715478,-74.009266,,Manhattan
+Chambers St,40.714111,-74.008585,A,Manhattan
+Chauncey St,40.682893,-73.910456,J,Brooklyn
+Christopher St-Sheridan Sq,40.733422,-74.002906,,Manhattan
+Church Av,40.650843,-73.949575,,Brooklyn
+Church Av,40.650527,-73.962982,D,Brooklyn
+Church Av,40.644041,-73.979678,F,Brooklyn
+City Hall,40.713282,-74.006978,R,Manhattan
+Clark St,40.697466,-73.993086,,Brooklyn
+Classon Av,40.688873,-73.960070,G,Brooklyn
+Cleveland St,40.679947,-73.884639,J,Queens
+Clifton,40.621319,-74.071402,S,Staten Island
+Clinton-Washington Avs,40.683263,-73.965838,A,Brooklyn
+Clinton-Washington Avs,40.688089,-73.966839,G,Brooklyn
+Coney Island-Stillwell Av,40.577422,-73.981233,D,Brooklyn
+Cortelyou Rd,40.640927,-73.963891,D,Brooklyn
+Cortlandt St,40.710668,-74.011029,R,Manhattan
+Court Sq-23 St,40.747141,-73.945032,FG,Queens
+Court St / Borough Hall,40.693241,-73.990642,R,Brooklyn
+Crescent St,40.683194,-73.873785,J,Queens
+Crown Hts-Utica Av,40.668897,-73.932942,,Brooklyn
+Cypress Av,40.805368,-73.914042,,
+Cypress Hills,40.689941,-73.872550,J,Queens
+DeKalb Av,40.703811,-73.918425,L,Brooklyn
+DeKalb Av,40.690635,-73.981824,R,Brooklyn
+Delancey St-Essex St,40.718463,-73.987775,FM,Manhattan
+Ditmas Av,40.636119,-73.978172,F,Brooklyn
+Dongan Hills,40.588849,-74.096090,S,Staten Island
+Dyckman St,40.860531,-73.925536,,Manhattan
+Dyckman St,40.865491,-73.927271,A,Manhattan
+E 143 St-St Mary's St,40.808719,-73.907657,,
+E 149 St,40.812118,-73.904098,,Bronx
+E 180 St,40.841894,-73.873488,,Bronx
+East 105 St,40.650573,-73.899485,L,Queens
+East Broadway,40.713715,-73.990173,F,Manhattan
+Eastchester-Dyre Av,40.888300,-73.830834,,Bronx
+Eastern Pkwy-Brooklyn Museum,40.671987,-73.964375,,Brooklyn
+Elder Av,40.828584,-73.879159,,Bronx
+Elmhurst Av,40.742454,-73.882017,G,Queens
+Eltingville,40.544601,-74.164570,S,Staten Island
+Euclid Av,40.675377,-73.872106,A,Queens
+Far Rockaway-Mott Av,40.603995,-73.755405,H,Queens
+Flatbush Av-Brooklyn College,40.632836,-73.947642,,Brooklyn
+Flushing Av,40.700377,-73.950234,G,Brooklyn
+Flushing Av,40.700260,-73.941126,M,Brooklyn
+Flushing-Main St,40.759600,-73.830030,,Queens
+Fordham Rd,40.862803,-73.901034,,Bronx
+Fordham Rd,40.861296,-73.897749,D,Bronx
+Forest Av,40.704423,-73.903077,M,Queens
+Forest Hills-71 Av,40.721691,-73.844521,G,Queens
+Fort Hamilton Pkwy,40.640914,-73.994304,B,Brooklyn
+Fort Hamilton Pkwy,40.650782,-73.975776,F,Brooklyn
+Fort Hamilton Pkwy,40.631386,-74.005351,N,Brooklyn
+Franklin Av,40.680988,-73.956337,AS,Brooklyn
+Franklin Av / Botanic Garden,40.670513,-73.958688,S,Brooklyn
+Franklin St,40.719318,-74.006886,,Manhattan
+Freeman St,40.829993,-73.891865,,Bronx
+Fresh Pond Rd,40.706186,-73.895877,M,Queens
+Fulton St,40.710089,-74.007838,AM,Manhattan
+Fulton St,40.687119,-73.975375,G,Brooklyn
+Gates Av,40.689630,-73.922270,J,Brooklyn
+Graham Av,40.714565,-73.944053,L,Brooklyn
+Grand Army Plaza,40.675235,-73.971046,,Brooklyn
+Grand Av-Newtown,40.737015,-73.877223,G,Queens
+Grand Central-42 St,40.751992,-73.977359,,Manhattan
+Grand St,40.718267,-73.993753,D,Manhattan
+Grand St,40.711926,-73.940670,L,Brooklyn
+Grant Av,40.677044,-73.865050,A,Queens
+Grant City,40.578965,-74.109704,S,Staten Island
+Grasmere,40.603117,-74.084087,S,Staten Island
+Great Kills,40.551231,-74.151399,S,Staten Island
+Greenpoint Av,40.731352,-73.954449,G,Brooklyn
+Gun Hill Rd,40.877850,-73.866256,,Bronx
+Gun Hill Rd,40.869526,-73.846384,,Bronx
+Halsey St,40.686370,-73.916559,J,Brooklyn
+Halsey St,40.695602,-73.904084,L,Queens
+Harlem-148 St,40.823880,-73.936470,,Manhattan
+Hewes St,40.706870,-73.953431,M,Brooklyn
+High St,40.699337,-73.990531,A,
+Houston St,40.728251,-74.005367,,Manhattan
+Howard Beach-JFK Airport,40.660476,-73.830301,H,Queens
+Hoyt St,40.690545,-73.985065,,Brooklyn
+Hoyt-Schermerhorn Sts,40.688484,-73.985001,A,Brooklyn
+Huguenot,40.533674,-74.191794,S,Staten Island
+Hunters Point Av,40.742216,-73.948916,,Queens
+Hunts Point Av,40.820948,-73.890549,,Bronx
+Intervale Av,40.822181,-73.896736,,Bronx
+Inwood-207 St,40.868072,-73.919899,A,Manhattan
+Jackson Av,40.816490,-73.907807,,Bronx
+Jamaica Center-Parsons/Archer,40.702147,-73.801109,G,Queens
+Jamaica-179 St,40.712646,-73.783817,F,Queens
+Jamaica-Van Wyck,40.702566,-73.816859,G,Queens
+Jay St-MetroTech,40.692259,-73.986642,AR,Brooklyn
+Jefferson Av,40.583591,-74.103338,S,Staten Island
+Jefferson St,40.706607,-73.922913,L,Brooklyn
+Junction Blvd,40.749145,-73.869527,,Queens
+Junius St / Livonia Av,40.663776,-73.901509,L,Queens
+Kew Gardens-Union Tpke,40.714441,-73.831008,F,Queens
+Kings Hwy,40.608670,-73.957734,D,Brooklyn
+Kings Hwy,40.603217,-73.972361,F,Brooklyn
+Kings Hwy,40.603923,-73.980353,N,Brooklyn
+Kingsbridge Rd,40.867760,-73.897174,,Bronx
+Kingsbridge Rd,40.866978,-73.893509,D,Bronx
+Kingston Av,40.669399,-73.942161,,Brooklyn
+Kingston-Throop Avs,40.679921,-73.940858,A,Brooklyn
+Knickerbocker Av,40.698664,-73.919711,M,Brooklyn
+Kosciuszko St,40.693342,-73.928814,J,Brooklyn
+Lafayette Av,40.686113,-73.973946,A,Brooklyn
+Lexington Av/59 St,40.762593,-73.967613,R,Manhattan
+Lexington Av/63 St,40.764629,-73.966113,B,Manhattan
+Liberty Av,40.674542,-73.896548,A,Queens
+Longwood Av,40.816104,-73.896435,,Bronx
+Lorimer St,40.703869,-73.947408,M,Brooklyn
+Marble Hill-225 St,40.874561,-73.909831,,
+Marcy Av,40.708359,-73.957757,M,Brooklyn
+Metropolitan Av / Lorimer St,40.713428,-73.950847,GL,Brooklyn
+Mets-Willets Point,40.754622,-73.845625,,Queens
+Middle Village-Metropolitan Av,40.711396,-73.889601,M,Queens
+Middletown Rd,40.843863,-73.836322,,Bronx
+Montrose Av,40.707739,-73.939850,L,Brooklyn
+Morgan Av,40.706152,-73.933147,L,Brooklyn
+Morris Park,40.854364,-73.860495,,Bronx
+Morrison Av-Soundview,40.829521,-73.874516,,Bronx
+Mosholu Pkwy,40.879750,-73.884655,,Bronx
+Mt Eden Av,40.844434,-73.914685,,Bronx
+Myrtle Av,40.697207,-73.935657,M,Brooklyn
+Myrtle-Willoughby Avs,40.694568,-73.949046,G,Brooklyn
+Myrtle-Wyckoff Avs,40.699622,-73.911986,LM,Brooklyn
+Nassau Av,40.724635,-73.951277,G,Brooklyn
+Neck Rd,40.595246,-73.955161,D,Brooklyn
+Neptune Av,40.581011,-73.974574,F,Brooklyn
+Nereid Av,40.898379,-73.854376,,Bronx
+Nevins St,40.688246,-73.980492,,Brooklyn
+New Dorp,40.573480,-74.117210,S,Staten Island
+New Lots Av,40.666235,-73.884079,,Queens
+New Lots Av,40.658733,-73.899232,L,Queens
+Newkirk Av-Little Haiti,40.639967,-73.948411,,Brooklyn
+Newkirk Plaza,40.635082,-73.962793,D,Brooklyn
+Northern Blvd,40.752885,-73.906006,G,Queens
+Norwood Av,40.681410,-73.880039,J,Queens
+Norwood-205 St,40.874811,-73.878855,D,Bronx
+Nostrand Av,40.669847,-73.950466,,Brooklyn
+Nostrand Av,40.680438,-73.950426,A,Brooklyn
+Oakwood Heights,40.565110,-74.126320,S,Staten Island
+Ocean Pkwy,40.576312,-73.968501,D,Brooklyn
+Old Town,40.596612,-74.087368,S,Staten Island
+Ozone Park-Lefferts Blvd,40.685951,-73.825798,A,Queens
+Park Pl,40.674772,-73.957624,S,Brooklyn
+Park Place,40.713051,-74.008811,,Manhattan
+Parkchester,40.833226,-73.860816,,Bronx
+Parkside Av,40.655292,-73.961495,D,Brooklyn
+Parsons Blvd,40.707564,-73.803326,F,Queens
+Pelham Bay Park,40.852462,-73.828121,,Bronx
+Pelham Pkwy,40.857192,-73.867615,,Bronx
+Pelham Pkwy,40.858985,-73.855359,,Bronx
+Pennsylvania Av,40.664635,-73.894895,,Queens
+Pleasant Plains,40.522410,-74.217847,S,Staten Island
+President St-Medgar Evers College,40.667883,-73.950683,,Brooklyn
+Prince St,40.724329,-73.997702,R,Manhattan
+Prince's Bay,40.525507,-74.200064,S,Staten Island
+Prospect Av,40.819585,-73.901770,,Bronx
+Prospect Av,40.665414,-73.992872,R,Brooklyn
+Prospect Park,40.661614,-73.962246,D,Brooklyn
+Queens Plaza,40.748973,-73.937243,G,Queens
+Queensboro Plaza,40.750582,-73.940202,R,Queens
+Ralph Av,40.678822,-73.920786,A,Brooklyn
+Rector St,40.707513,-74.013783,,Manhattan
+Rector St,40.707220,-74.013342,R,Manhattan
+Richmond Valley,40.519631,-74.229141,S,Staten Island
+Rockaway Av,40.662549,-73.908946,,Brooklyn
+Rockaway Av,40.678340,-73.911946,A,Brooklyn
+Rockaway Blvd,40.680429,-73.843853,A,Queens
+Rockaway Park-Beach 116 St,40.580903,-73.835592,H,Queens
+Roosevelt Av / 74 St-Broadway,40.746746,-73.891366,G,Queens
+Roosevelt Island,40.759145,-73.953260,B,Manhattan
+S.B. Coney Island,40.577422,-73.981233,N,Brooklyn
+Saratoga Av,40.661453,-73.916327,,Brooklyn
+Seneca Av,40.702762,-73.907740,M,Brooklyn
+Sheepshead Bay,40.586896,-73.954155,D,Brooklyn
+Shepherd Av,40.674130,-73.880750,A,Queens
+Simpson St,40.824073,-73.893064,,Bronx
+Smith-9 Sts,40.673580,-73.995959,F,Brooklyn
+South Ferry,40.702068,-74.013664,,Manhattan
+South Ferry / Whitehall St,40.702249,-74.013100,R,Manhattan
+Spring St,40.722301,-73.997141,,Manhattan
+Spring St,40.726227,-74.003739,A,Manhattan
+St George,40.643748,-74.073643,S,Staten Island
+St Lawrence Av,40.831509,-73.867618,,Bronx
+Stapleton,40.627915,-74.075162,S,Staten Island
+Steinway St,40.756879,-73.920740,G,Queens
+Sterling St,40.662742,-73.950850,,Brooklyn
+Sutphin Blvd,40.705460,-73.810708,F,Queens
+Sutphin Blvd-Archer Av-JFK Airport,40.700486,-73.807969,G,Queens
+Sutter Av,40.669367,-73.901975,L,Queens
+Sutter Av-Rutland Rd,40.664717,-73.922610,,Brooklyn
+Times Sq-42 St,40.755356,-73.987042,R,Manhattan
+Tompkinsville,40.636949,-74.074835,S,Staten Island
+Tottenville,40.512764,-74.251961,S,Staten Island
+Tremont Av,40.850410,-73.905227,D,Bronx
+Union St,40.677316,-73.983110,R,Brooklyn
+Utica Av,40.679364,-73.930729,A,Brooklyn
+Van Cortlandt Park-242 St,40.889248,-73.898583,,Bronx
+Van Siclen Av,40.665449,-73.889395,,Queens
+Van Siclen Av,40.672710,-73.890358,A,Queens
+Van Siclen Av,40.678024,-73.891688,J,Queens
+Vernon Blvd-Jackson Av,40.742626,-73.953581,,Queens
+W 4 St-Wash Sq,40.732338,-74.000495,AD,Manhattan
+W 8 St-NY Aquarium,40.576127,-73.975939,D,Brooklyn
+WTC Cortlandt,40.711835,-74.012188,,Manhattan
+Wakefield-241 St,40.903125,-73.850620,,Bronx
+Wall St,40.706821,-74.009100,,Manhattan
+Wall St,40.707557,-74.011862,,Manhattan
+West Farms Sq-E Tremont Av,40.840295,-73.880049,,Bronx
+Westchester Sq-E Tremont Av,40.839892,-73.842952,,Bronx
+Whitlock Av,40.826525,-73.886283,,Bronx
+Wilson Av,40.688764,-73.904046,L,Queens
+Winthrop St,40.656652,-73.950200,,Brooklyn
+Woodhaven Blvd,40.733106,-73.869229,G,Queens
+Woodhaven Blvd,40.693879,-73.851576,J,Queens
+Woodlawn,40.886037,-73.878751,,Bronx
+World Trade Center,40.712582,-74.009781,E,Manhattan
+York St,40.701397,-73.986751,F,
+Zerega Av,40.836488,-73.847036,,Bronx

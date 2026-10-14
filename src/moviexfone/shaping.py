@@ -94,6 +94,7 @@ def render_speak(
     max_times: int,
     specific_movie: bool,
     name_days: bool = False,
+    name_theater: bool = False,
 ) -> str:
     parts: list[str] = []
     same_theater = len({card.theater for card in cards}) == 1 and len(cards) > 1
@@ -109,8 +110,9 @@ def render_speak(
             else:
                 parts.append(_sentence(f"At {card.theater}, {clock}"))
         elif same_theater:
+            place = "" if name_theater else f" at {card.theater}"
             if index == 0:
-                parts.append(f"{when}: {card.movie}{fmt} {link} {clock}")
+                parts.append(f"{when}{place}: {card.movie}{fmt} {link} {clock}")
             elif index == len(cards) - 1:
                 parts.append(_sentence(f"and {card.movie}{fmt} {link} {clock}"))
             else:
@@ -140,6 +142,7 @@ def trim_cards(
     specific_movie: bool,
     second_budget: float = 10.5,
     name_days: bool = False,
+    name_theater: bool = False,
     prefix: str = "",
 ) -> tuple[list[ShowCard], int, str]:
     """Return the page of cards, how many remain, and a short `speak` line."""
@@ -157,6 +160,7 @@ def trim_cards(
             max_times=limit,
             specific_movie=specific_movie,
             name_days=name_days,
+            name_theater=name_theater,
         )
         if prefix:
             return f"{prefix} {line}".strip()
@@ -173,9 +177,11 @@ def trim_cards(
         speak = _speak(chosen, extra, times)
         more_after = extra
     hidden = sum(max(0, len(card.times_local) - times) for card in chosen)
-    if hidden and specific_movie:
-        speak = speak.rstrip(".")
-        speak = f"{speak}, and {hidden} more."
+    if hidden:
+        with_more = speak.rstrip(".")
+        with_more = f"{with_more}, and {hidden} more."
+        if specific_movie or estimate_spoken_seconds(with_more) <= second_budget:
+            speak = with_more
     trimmed: list[ShowCard] = []
     for card in chosen:
         trimmed.append(

@@ -15,6 +15,7 @@ from moviexfone.sanitize import sanitize_display
 from moviexfone.shaping import ShowCard, trim_cards
 from moviexfone.timeutil import (
     NY,
+    business_date,
     display_time,
     iso_ny,
     parse_clock,
@@ -123,6 +124,9 @@ def search_showtimes(
         return _format_gap(db, resolution, format_name, date_spoken, dates)
 
     if not matched:
+        later = _later_tonight(rows, resolution, movie_id, date_spoken, now)
+        if later is not None:
+            return later
         if movie_id is None:
             return _nothing_listed(resolution, date_spoken, rows, now, dates)
         return _alternative(
@@ -134,6 +138,7 @@ def search_showtimes(
             after,
             date_spoken,
             now,
+            db,
         )
 
     cards = _cards(matched, resolution, broad=movie_id is None)
@@ -154,6 +159,7 @@ def search_showtimes(
         max_times=max_times,
         when=when,
         specific_movie=movie_id is not None,
+        name_theater=resolution.kind == "theater",
         name_days=date_spoken == "this weekend",
         prefix=caveat or "",
     )
@@ -166,12 +172,12 @@ def search_showtimes(
     ]
     if used:
         oldest = min(row.fetched_at for row in used)
-    if movie_id is None:
+    if movie_id is None and any(card.source == "assemble" for card in chosen):
         missing = db.query_one(
             """SELECT COUNT(*) AS n FROM movie m
                WHERE NOT EXISTS (SELECT 1 FROM showtime s WHERE s.movie_id = m.movie_id)"""
         )
-        if missing and int(missing["n"]) > 0 and chosen:
+        if missing and int(missing["n"]) > 0:
             speak = f"{speak} I only have live times for some titles.".strip()
     payload = _payload(resolution, date_spoken, chosen, more, speak, oldest)
     if not chosen:
@@ -549,6 +555,7 @@ def _alternative(
     after: time | None,
     date_spoken: str,
     now: datetime,
+    db: Database,
 ) -> dict[str, Any]:
     same_place = [
         row
@@ -568,7 +575,10 @@ def _alternative(
         ]
         elsewhere = True
     if not pool:
-        speak = f"No screenings listed for {movie_title}. Want another movie or neighborhood?"
+        if _title_not_fetched(db, movie_id):
+            speak = f"I don't have live times for {movie_title} yet."
+        else:
+            speak = f"No screenings listed for {movie_title}. Want another movie or neighborhood?"
         return {
             "resolved_location": _resolved_json(resolution),
             "date_spoken": date_spoken,
@@ -638,6 +648,61 @@ def _alternative(
         "note": "No screenings listed. Offer nearest_alternative if present. Do not search again.",
         "coverage_note": None,
         "source": card[0].source if card else None,
+        "data_as_of": iso_ny(now),
+    }
+
+
+def _title_not_fetched(db: Database, movie_id: str) -> bool:
+    checked = db.query_one(
+        "SELECT 1 AS n FROM assemble_status WHERE movie_id = ?",
+        (movie_id,),
+    )
+    if checked is not None:
+        return False
+    any_row = db.query_one(
+        "SELECT 1 AS n FROM showtime WHERE movie_id = ? LIMIT 1",
+        (movie_id,),
+    )
+    return any_row is None
+
+
+def _later_tonight(
+    rows: list[_Row],
+    resolution: Resolution,
+    movie_id: str | None,
+    date_spoken: str,
+    now: datetime,
+) -> dict[str, Any] | None:
+    if resolution.kind != "theater" or not resolution.covered:
+        return None
+    if "tonight" not in date_spoken.lower():
+        return None
+    tomorrow = (business_date(now) + timedelta(days=1)).isoformat()
+    upcoming = [
+        row
+        for row in rows
+        if row.business_date == tomorrow
+        and row.starts_at >= now
+        and (movie_id is None or row.movie_id == movie_id)
+        and _in_resolution(row, resolution)
+    ]
+    if not upcoming:
+        return None
+    first = min(upcoming, key=lambda row: row.starts_at)
+    speak = (
+        f"Nothing else tonight. Tomorrow the first show is {first.movie} "
+        f"at {spoken_time(first.local_t)}."
+    )
+    return {
+        "resolved_location": _resolved_json(resolution),
+        "date_spoken": date_spoken,
+        "results": [],
+        "more_results": 0,
+        "speak": speak,
+        "coverage_note": speak,
+        "nearest_alternative": None,
+        "note": "The theater is covered. Tonight is over. Do not say there are no live times.",
+        "source": first.source,
         "data_as_of": iso_ny(now),
     }
 

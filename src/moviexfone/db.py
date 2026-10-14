@@ -77,6 +77,10 @@ CREATE TABLE IF NOT EXISTS ingest_run (
 CREATE INDEX IF NOT EXISTS idx_showtime_date ON showtime (business_date);
 CREATE INDEX IF NOT EXISTS idx_showtime_movie ON showtime (movie_id);
 CREATE INDEX IF NOT EXISTS idx_showtime_theater ON showtime (theater_id);
+CREATE TABLE IF NOT EXISTS assemble_status (
+  movie_id TEXT PRIMARY KEY,
+  checked_at TEXT
+);
 """
 
 

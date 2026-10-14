@@ -9,12 +9,14 @@ from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from moviexfone.api.models import AskIn, MovieIn, SearchIn
 from moviexfone.api.security import (
+    SessionCaps,
     VoiceTickets,
+    basic_auth_ok,
     enforce_deployment,
     enforce_rate_limit,
     enforce_tool_secret,
@@ -62,6 +64,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         from moviexfone.api.security import RateLimiter
 
         app.state.limiter = RateLimiter(settings.rate_limit_per_minute)
+        app.state.ticket_limiter = RateLimiter(5)
+        app.state.sessions = SessionCaps()
         app.state.tickets = VoiceTickets()
         log.info("ready voice_mode=%s live_data=%s", settings.voice_mode, settings.live_data)
         try:
@@ -72,6 +76,27 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             db.close()
 
     app = FastAPI(title="MovieXFone", version="0.1.0", lifespan=lifespan)
+
+    @app.middleware("http")
+    async def basic_gate(request: Request, call_next: Any) -> Response:
+        path = request.url.path
+        gated = path in {"/", "/v1/voice/ticket"} or path.startswith("/static")
+        if (
+            gated
+            and settings.basic_user
+            and not basic_auth_ok(
+                request.headers.get("authorization"),
+                settings.basic_user,
+                settings.basic_password,
+            )
+        ):
+            return Response(
+                status_code=401,
+                headers={"WWW-Authenticate": 'Basic realm="MovieXFone"'},
+            )
+        response: Response = await call_next(request)
+        return response
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=list(settings.cors_origins),
@@ -165,12 +190,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def voice_ticket(request: Request) -> dict[str, Any]:
         origin = request.headers.get("origin")
         host = request.client.host if request.client else None
+        if not request.app.state.ticket_limiter.allow(host or "unknown"):
+            raise HTTPException(
+                status_code=429, detail="Too many requests", headers={"Retry-After": "60"}
+            )
         if not ticket_allowed(
             origin=origin,
             host=host,
             header_secret=request.headers.get("x-moviexfone-secret"),
             allowed_origins=settings.cors_origins,
             secret=settings.tool_secret,
+            authorization=request.headers.get("authorization"),
+            basic_user=settings.basic_user,
+            basic_password=settings.basic_password,
         ):
             raise HTTPException(status_code=401, detail="not authorized")
         return {"ticket": request.app.state.tickets.issue(), "expires_in": 60}
@@ -252,16 +284,33 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.websocket("/ws/voice")
     async def voice(websocket: WebSocket) -> None:
         host = websocket.client.host if websocket.client else "unknown"
+        if settings.basic_user and not basic_auth_ok(
+            websocket.headers.get("authorization"),
+            settings.basic_user,
+            settings.basic_password,
+        ):
+            await websocket.close(code=1008)
+            return
         if not websocket.app.state.limiter.allow(f"ws:{host}"):
             await websocket.close(code=1008)
             return
-        await handle_voice_socket(
-            websocket,
-            settings,
-            websocket.app.state.db,
-            refresher=getattr(websocket.app.state, "refresher", None),
-            tickets=getattr(websocket.app.state, "tickets", None),
-        )
+        blocked = websocket.app.state.sessions.allow(host)
+        if blocked:
+            await websocket.accept()
+            await websocket.send_json({"type": "error", "message": blocked})
+            await websocket.close(code=1013)
+            websocket.app.state.sessions.release(host)
+            return
+        try:
+            await handle_voice_socket(
+                websocket,
+                settings,
+                websocket.app.state.db,
+                refresher=getattr(websocket.app.state, "refresher", None),
+                tickets=getattr(websocket.app.state, "tickets", None),
+            )
+        finally:
+            websocket.app.state.sessions.release(host)
 
     @app.get("/")
     def index() -> FileResponse:

@@ -185,7 +185,7 @@ def test_voice_origin_is_rejected(settings: Settings) -> None:
 
 
 def test_idle_timeout_is_not_a_nag(db: Database) -> None:
-    assert _session_body(db)["turn_detection"]["idle_timeout_ms"] >= 60000
+    assert "idle_timeout_ms" not in _session_body(db)["turn_detection"]
 
 
 def test_empty_neighborhood_is_honest(db: Database) -> None:

@@ -44,6 +44,8 @@ class Settings:
     assemble_ttl_seconds: int
     xai_model: str
     max_session_seconds: int
+    basic_user: str | None = None
+    basic_password: str | None = None
 
     @classmethod
     def from_env(cls, env_file: Path | None = None) -> Settings:
@@ -70,6 +72,8 @@ class Settings:
             assemble_ttl_seconds=int(os.environ.get("MOVIEXFONE_ASSEMBLE_TTL", "900")),
             xai_model=os.environ.get("MOVIEXFONE_XAI_MODEL", "grok-voice-think-fast-2.0"),
             max_session_seconds=int(os.environ.get("MOVIEXFONE_MAX_SESSION", "900")),
+            basic_user=os.environ.get("MOVIEXFONE_BASIC_USER", "").strip() or None,
+            basic_password=os.environ.get("MOVIEXFONE_BASIC_PASSWORD", "").strip() or None,
         )
 
     @property

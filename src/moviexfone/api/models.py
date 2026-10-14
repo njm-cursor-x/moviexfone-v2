@@ -12,10 +12,11 @@ class SearchIn(BaseModel):
     movie: str | None = Field(default=None, max_length=160)
     date: str | None = Field(default=None, max_length=40)
     after_time: str | None = Field(default=None, max_length=8)
+    before_time: str | None = Field(default=None, max_length=8)
     format: str = "any"
     page: int = Field(default=1, ge=1, le=10)
 
-    @field_validator("location", "movie", "date", "after_time", mode="before")
+    @field_validator("location", "movie", "date", "after_time", "before_time", mode="before")
     @classmethod
     def no_nulls(cls, value: object) -> str | None:
         if value is None:

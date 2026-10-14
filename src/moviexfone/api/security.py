@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
 import os
@@ -105,6 +106,11 @@ def enforce_deployment(settings: Any) -> None:
             "Refusing to serve: MOVIEXFONE_LIVE_VOICE requires MOVIEXFONE_TOOL_SECRET "
             "of at least 16 bytes."
         )
+    if not local_bind and not (settings.basic_user and settings.basic_password):
+        raise RuntimeError(
+            "Refusing to serve: set MOVIEXFONE_BASIC_USER and MOVIEXFONE_BASIC_PASSWORD "
+            "before binding outside localhost."
+        )
 
 
 def origin_allowed(origin: str | None, allowed: tuple[str, ...]) -> bool:
@@ -147,6 +153,54 @@ def _test_origin(host: str | None, origin: str | None) -> bool:
     )
 
 
+def basic_auth_ok(header: str | None, user: str | None, password: str | None) -> bool:
+    if not user or not password:
+        return True
+    if not header or not header.startswith("Basic "):
+        return False
+    try:
+        decoded = base64.b64decode(header.split(" ", 1)[1]).decode("utf-8")
+    except (ValueError, UnicodeError):
+        return False
+    got_user, _, got_password = decoded.partition(":")
+    return secrets_equal(got_user, user) and secrets_equal(got_password, password)
+
+
+class SessionCaps:
+    """Per-IP concurrent and daily voice sessions, plus one global line."""
+
+    def __init__(self, *, per_ip: int = 1, daily: int = 20) -> None:
+        self.per_ip = per_ip
+        self.daily = daily
+        self._lock = threading.Lock()
+        self._open: dict[str, int] = {}
+        self._daily: dict[str, tuple[int, float]] = {}
+
+    def allow(self, host: str | None) -> str | None:
+        key = host or "unknown"
+        now = time.time()
+        with self._lock:
+            count, stamp = self._daily.get(key, (0, now))
+            if now - stamp > 86400:
+                count = 0
+            if count >= self.daily:
+                return "This line is closed for today. Try again tomorrow."
+            if self._open.get(key, 0) >= self.per_ip:
+                return "The line is busy. Try again in a minute."
+            self._open[key] = self._open.get(key, 0) + 1
+            self._daily[key] = (count + 1, stamp if count else now)
+        return None
+
+    def release(self, host: str | None) -> None:
+        key = host or "unknown"
+        with self._lock:
+            left = self._open.get(key, 0) - 1
+            if left > 0:
+                self._open[key] = left
+            else:
+                self._open.pop(key, None)
+
+
 def ticket_allowed(
     *,
     origin: str | None,
@@ -154,12 +208,17 @@ def ticket_allowed(
     header_secret: str | None,
     allowed_origins: tuple[str, ...],
     secret: str | None,
+    authorization: str | None = None,
+    basic_user: str | None = None,
+    basic_password: str | None = None,
 ) -> bool:
-    if origin and (origin_allowed(origin, allowed_origins) or _test_origin(host, origin)):
+    """Origin is not authentication. A remote client needs the secret or basic auth."""
+    del allowed_origins
+    if basic_user and basic_password:
+        return basic_auth_ok(authorization, basic_user, basic_password)
+    if (host or "") in local_hosts() or _test_origin(host, origin):
         return True
-    if secret and header_secret and secrets_equal(header_secret, secret):
-        return True
-    return not origin and (host or "") in local_hosts() and not secret
+    return bool(secret and header_secret and secrets_equal(header_secret, secret))
 
 
 def voice_connection_allowed(

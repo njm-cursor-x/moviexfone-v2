@@ -96,8 +96,7 @@ def refresh_assemble(
                 missed_at = _LOOKUP_MISS.get(movie_id)
                 if missed_at is not None and time.monotonic() - missed_at < 900:
                     continue
-                for _attempt in range(3):
-                    limiter.wait()
+                limiter.wait()
                 try:
                     found = lookup_film_id(title, client=client)
                 except Exception as exc:
@@ -129,6 +128,10 @@ def refresh_assemble(
                     cleared = True
                 total += _apply(db, rows, mode="insert", now=now)
                 fetched = True
+            db.execute(
+                "INSERT OR REPLACE INTO assemble_status (movie_id, checked_at) VALUES (?, ?)",
+                (movie_id, started.isoformat()),
+            )
         if fetched or errors:
             record_ingest(
                 db,
@@ -157,9 +160,7 @@ class AssembleRefresher:
 
     def start(self) -> None:
         self._thread.start()
-        for row in self._db.query(
-            "SELECT title FROM movie WHERE tmdb_id IS NOT NULL AND tmdb_id != ''"
-        ):
+        for row in self._db.query("SELECT title FROM movie"):
             self.consider(str(row["title"]))
 
     def consider(self, title: str) -> None:

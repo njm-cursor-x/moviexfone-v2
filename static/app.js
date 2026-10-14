@@ -148,15 +148,28 @@ async function connect() {
   }
   const proto = location.protocol === "https:" ? "wss" : "ws";
   let auth = "";
+  let ticketFailed = false;
   try {
     const response = await fetch("/v1/voice/ticket", { method: "POST" });
-    if (response.ok) {
+    if (response.status === 401 || response.status === 429) {
+      ticketFailed = true;
+      sessionWanted = false;
+      modeEl.textContent = "idle";
+      addLine("MovieXFone", response.status === 429 ? "Too many tries. Wait a minute." : "Not authorized.");
+    } else if (response.ok) {
       const body = await response.json();
       if (body.ticket) auth = `?ticket=${encodeURIComponent(body.ticket)}`;
+    } else {
+      ticketFailed = true;
+      sessionWanted = false;
+      addLine("MovieXFone", "The line didn't open.");
     }
   } catch (_err) {
-    auth = "";
+    ticketFailed = true;
+    sessionWanted = false;
+    addLine("MovieXFone", "The line didn't open.");
   }
+  if (ticketFailed) return;
   socket = new WebSocket(`${proto}://${location.host}/ws/voice${auth}`);
   socket.onmessage = (event) => {
     const msg = JSON.parse(event.data);
@@ -199,6 +212,7 @@ async function connect() {
       }
     } else if (msg.type === "notice" || msg.type === "error") {
       addLine("MovieXFone", msg.message || "");
+      socket._statusShown = true;
     }
   };
   socket.onopen = () => {
@@ -209,13 +223,13 @@ async function connect() {
     if (event.code === 1008) {
       sessionWanted = false;
       modeEl.textContent = "idle";
-      addLine("MovieXFone", "Not authorized.");
+      if (!socket._statusShown) addLine("MovieXFone", "Not authorized.");
       return;
     }
     if (event.code === 1013) {
       sessionWanted = false;
       modeEl.textContent = "idle";
-      addLine("MovieXFone", "The line is busy. Try again in a minute.");
+      if (!socket._statusShown) addLine("MovieXFone", "The line is busy. Try again in a minute.");
       return;
     }
     if (!sessionWanted || mode === "live") {

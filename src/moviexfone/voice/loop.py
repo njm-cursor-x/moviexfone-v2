@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -20,6 +21,12 @@ LIMIT_RESULT = {
     "note": "Answer with what you have or ask one question.",
 }
 FILLER_TEXT = "One sec."
+SILENCE_PROMPT = "Anything else?"
+_GOODBYE = re.compile(
+    r"\b(goodbye|bye|good night|goodnight|thanks|thank you|that's all|thats all|"
+    r"that's it|thats it|i'm done|im done|hang up|all set)\b",
+    re.IGNORECASE,
+)
 
 
 class ToolLoop:
@@ -45,6 +52,8 @@ class ToolLoop:
         self._awaiting_filler_id = False
         self.filler_sent = 0
         self._response_active = False
+        self._last_user = ""
+        self._silence_prompted = False
 
     async def handle_server_event(self, event: dict[str, Any]) -> list[dict[str, Any]]:
         kind = event.get("type")
@@ -80,6 +89,11 @@ class ToolLoop:
             self._pending.append(
                 (str(event.get("call_id") or ""), str(event.get("name") or ""), parsed)
             )
+            return []
+        if kind == "conversation.item.input_audio_transcription.completed":
+            self._last_user = str(event.get("transcript") or "")
+            if _GOODBYE.search(self._last_user):
+                self._silence_prompted = False
             return []
         if kind == "input_audio_buffer.speech_started":
             self.rounds = 0
@@ -120,7 +134,14 @@ class ToolLoop:
             await self.wait_playback()
         names = [name for _call_id, name, _args in batch]
         if "end_call" in names:
-            messages.append({"type": "call.end"})
+            if _GOODBYE.search(self._last_user):
+                messages.append({"type": "call.end"})
+                return messages
+            if not self._silence_prompted and not had_audio:
+                self._silence_prompted = True
+                messages.append(_force(SILENCE_PROMPT))
+                return messages
+            self._silence_prompted = True
             return messages
         speaks = [
             str(result.get("speak"))
@@ -128,17 +149,7 @@ class ToolLoop:
             if isinstance(result, dict) and result.get("speak")
         ]
         if speaks and self.rounds <= self.max_rounds:
-            messages.append(
-                {
-                    "type": "conversation.item.create",
-                    "item": {
-                        "type": "force_message",
-                        "role": "assistant",
-                        "interruptible": True,
-                        "content": [{"type": "output_text", "text": " ".join(speaks)[:500]}],
-                    },
-                }
-            )
+            messages.append(_force(" ".join(speaks)[:500]))
             return messages
         if self.rounds > self.max_rounds:
             messages.append({"type": "response.create", "response": {"tool_choice": "none"}})
@@ -185,6 +196,18 @@ class ToolLoop:
         }
         if self._send is not None:
             await self._send(message)
+
+
+def _force(text: str) -> dict[str, Any]:
+    return {
+        "type": "conversation.item.create",
+        "item": {
+            "type": "force_message",
+            "role": "assistant",
+            "interruptible": True,
+            "content": [{"type": "output_text", "text": text}],
+        },
+    }
 
 
 def _output_message(call_id: str, result: dict[str, Any]) -> dict[str, Any]:

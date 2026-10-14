@@ -10,7 +10,7 @@ SEARCH_SHOWTIMES: dict[str, Any] = {
     "description": (
         "Find movie showtimes at New York City theaters. Call ONCE per caller question. "
         "Never invent times; only read times returned here. Read the speak field aloud. "
-        "If results are empty, read nearest_alternative or say no screenings are listed. "
+        "If results are empty, read nearest_alternative or the speak field. "
         "Do not search again for the same question."
     ),
     "parameters": {
@@ -30,7 +30,11 @@ SEARCH_SHOWTIMES: dict[str, Any] = {
             },
             "after_time": {
                 "type": "string",
-                "description": "HH:MM 24-hour earliest start. Tonight means 17:00.",
+                "description": "HH:MM 24-hour earliest start. Tonight means 17:00. Morning means 05:00.",
+            },
+            "before_time": {
+                "type": "string",
+                "description": "HH:MM 24-hour latest start. Morning means 12:00. Afternoon means 17:00.",
             },
             "format": {
                 "type": "string",
@@ -61,7 +65,7 @@ GET_MOVIE_INFO: dict[str, Any] = {
 END_CALL: dict[str, Any] = {
     "type": "function",
     "name": "end_call",
-    "description": "Hang up after a short goodbye.",
+    "description": "Hang up only after the caller says goodbye, bye, or thanks. Never call this because the caller is silent.",
     "parameters": {"type": "object", "properties": {}},
 }
 

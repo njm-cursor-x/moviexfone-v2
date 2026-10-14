@@ -253,15 +253,19 @@ def _apply(db: Database, rows: list[IncomingShow], *, mode: str, now: datetime) 
         )
         for row in kept
     ]
+    unique: dict[tuple[str, str, str, str], tuple[object, ...]] = {}
+    for item in payload:
+        unique[(str(item[0]), str(item[1]), str(item[2]), str(item[5]))] = item
+    stored = list(unique.values())
     db.executemany(
         """INSERT OR REPLACE INTO showtime (
             theater_id, movie_id, starts_at, starts_local, business_date, format_norm,
             format_label, status, ticket_url, source, fetched_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        payload,
+        stored,
     )
     _mark_coverage(db, now)
-    return len(payload)
+    return len(stored)
 
 
 def _delete_theaters(db: Database, theater_ids: list[str]) -> None:

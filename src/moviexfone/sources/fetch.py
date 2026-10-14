@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 import time
@@ -59,17 +60,27 @@ def fetch_alamo(client: AllowedClient | None = None) -> list[IncomingShow]:
             http.close()
 
 
+def nitehawk_day_url(base: str, day: object, *, first: bool) -> str:
+    stamp = getattr(day, "isoformat", lambda: "")()
+    if first or not stamp:
+        return base
+    return f"{base}/{stamp}/1/"
+
+
 def fetch_nitehawk(client: AllowedClient | None = None) -> list[IncomingShow]:
-    from datetime import date, timedelta
+    from datetime import timedelta
 
     own = client is None
     http = client or _client()
     rows: list[IncomingShow] = []
     try:
         for theater_id, url in NITEHAWK_URLS.items():
-            days = [date.today() + timedelta(days=offset) for offset in range(7)]
+            from moviexfone.timeutil import NY, now_ny
+
+            start = now_ny().astimezone(NY).date()
+            days = [start + timedelta(days=offset) for offset in range(7)]
             for index, day in enumerate(days):
-                target = url if index == 0 else f"{url}?date={day.isoformat()}"
+                target = nitehawk_day_url(url, day, first=index == 0)
                 if index:
                     time.sleep(0.3)
                 response = http.get(target, max_bytes=2_000_000)
@@ -150,18 +161,10 @@ def fetch_assemble_film(
 
 
 def lookup_film_id(title: str, *, client: AllowedClient) -> str | None:
-    """Resolve a catalog title through Assemble's search, listing, or find_film."""
+    """Resolve a catalog title through Assemble's find_film tool. The REST search paths 404."""
     cleaned = re.sub(r"\s+", " ", title).strip()
     if not cleaned or len(cleaned) > 120:
         return None
-    attempts = (
-        ("https://api.assemble.film/films/search", {"q": cleaned}),
-        ("https://api.assemble.film/films", {"query": cleaned}),
-    )
-    for url, params in attempts:
-        found = _read_film_id(client, url, params, cleaned)
-        if found:
-            return found
     return _read_film_id(
         client,
         ASSEMBLE_MCP,
@@ -196,7 +199,31 @@ def _read_film_id(
         payload = response.json()
     except ValueError:
         return None
-    return _film_id_from(payload, title)
+    return _film_id_from(_expand_mcp_text(payload), title)
+
+
+def _expand_mcp_text(payload: object) -> object:
+    """Assemble puts the same matches in content[0].text as a JSON string."""
+    if not isinstance(payload, dict):
+        return payload
+    result = payload.get("result")
+    blocks = result.get("content") if isinstance(result, dict) else payload.get("content")
+    if not isinstance(blocks, list):
+        return payload
+    extra: list[object] = []
+    for block in blocks:
+        if not isinstance(block, dict):
+            continue
+        text = block.get("text")
+        if not isinstance(text, str) or not text.startswith(("{", "[")):
+            continue
+        try:
+            extra.append(json.loads(text))
+        except ValueError:
+            continue
+    if not extra:
+        return payload
+    return {"payload": payload, "text": extra}
 
 
 def _film_id_from(payload: object, title: str) -> str | None:
@@ -213,7 +240,7 @@ def _film_id_from(payload: object, title: str) -> str | None:
                     break
             folded = re.sub(r"[^a-z0-9]+", " ", label.lower()).strip() if label else ""
             if folded == wanted:
-                for key in ("tmdb_id", "film_id", "id"):
+                for key in ("film", "tmdb_id", "film_id", "id"):
                     value = node.get(key)
                     if isinstance(value, (str, int)) and re.fullmatch(r"\d{2,12}", str(value)):
                         found.append(str(value))

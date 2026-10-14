@@ -1,8 +1,11 @@
-"""Local NYC ZIP centroids and subway stations. GeoSearch has no ZIP centroids."""
+"""Local NYC ZIP centroids and the public MTA station list."""
 
 from __future__ import annotations
 
+import csv
 import re
+from functools import lru_cache
+from pathlib import Path
 
 # Approximate centroids, good enough to land in the right neighborhood.
 _ZIPS: dict[str, tuple[float, float, str, str]] = {
@@ -61,36 +64,79 @@ _ZIPS: dict[str, tuple[float, float, str, str]] = {
     "10314": (40.599, -74.166, "Bulls Head", "Staten Island"),
 }
 
-# A short list of stations people actually ask for. Not the full MTA book.
-_STATIONS: tuple[tuple[str, float, float, str], ...] = (
-    ("14th Street Union Square", 40.735, -73.991, "Manhattan"),
-    ("Union Square", 40.735, -73.991, "Manhattan"),
-    ("Times Square 42nd Street", 40.756, -73.987, "Manhattan"),
-    ("Bedford Avenue", 40.717, -73.957, "Brooklyn"),
-    ("Lorimer Street", 40.714, -73.950, "Brooklyn"),
-    ("Metropolitan Avenue", 40.712, -73.951, "Brooklyn"),
-    ("Atlantic Avenue Barclays Center", 40.684, -73.978, "Brooklyn"),
-    ("Jay Street MetroTech", 40.692, -73.987, "Brooklyn"),
-    ("Court Street", 40.694, -73.991, "Brooklyn"),
-    ("72nd Street", 40.778, -73.982, "Manhattan"),
-    ("96th Street", 40.794, -73.972, "Manhattan"),
-    ("125th Street", 40.808, -73.945, "Manhattan"),
-    ("Canal Street", 40.718, -74.000, "Manhattan"),
-    ("Fulton Street", 40.710, -74.007, "Manhattan"),
-    ("Grand Central 42nd Street", 40.752, -73.977, "Manhattan"),
-    ("Herald Square 34th Street", 40.750, -73.988, "Manhattan"),
-    ("Astoria Boulevard", 40.770, -73.918, "Queens"),
-    ("Jackson Heights Roosevelt Avenue", 40.747, -73.891, "Queens"),
-    ("Forest Hills 71st Avenue", 40.721, -73.844, "Queens"),
-    ("161st Street Yankee Stadium", 40.828, -73.926, "Bronx"),
-    ("St George", 40.644, -74.074, "Staten Island"),
-)
+_ABBREV = {
+    "ave": "avenue",
+    "av": "avenue",
+    "st": "street",
+    "blvd": "boulevard",
+    "rd": "road",
+    "pkwy": "parkway",
+    "pl": "place",
+    "sq": "square",
+}
+_ORDINAL = re.compile(r"\b(\d+)(?:st|nd|rd|th)\b")
+_LINE_LETTERS = set("ABCDEFGJLMNQRSZW")
+_NUMBER_LINES = {"1", "2", "3", "4", "5", "6", "7"}
+_BOROUGHS = {"brooklyn", "manhattan", "queens", "bronx", "staten island", "the bronx"}
 
 
-def _norm(text: str) -> str:
-    lowered = text.lower().replace(".", " ")
-    lowered = re.sub(r"\b(station|stop|subway|train|the)\b", " ", lowered)
-    return re.sub(r"\s+", " ", lowered).strip()
+def _station_file() -> Path:
+    from moviexfone.paths import data_dir
+
+    return data_dir() / "mta-stations.csv"
+
+
+@lru_cache(maxsize=1)
+def stations() -> tuple[tuple[str, float, float, str, frozenset[str]], ...]:
+    path = _station_file()
+    if not path.is_file():
+        return ()
+    found: list[tuple[str, float, float, str, frozenset[str]]] = []
+    with path.open(encoding="utf-8", newline="") as handle:
+        for row in csv.DictReader(handle):
+            name = (row.get("name") or "").strip()
+            if not name:
+                continue
+            lines = frozenset(char for char in (row.get("lines") or "").upper() if char.isalnum())
+            found.append(
+                (
+                    name,
+                    float(row["lat"]),
+                    float(row["lng"]),
+                    (row.get("borough") or "").strip(),
+                    lines,
+                )
+            )
+    return tuple(found)
+
+
+def _words_and_lines(text: str) -> tuple[tuple[str, ...], frozenset[str]]:
+    raw = text.lower().replace("–", " ").replace("—", " ").replace("/", " ").replace("-", " ")
+    raw = raw.replace(".", " ")
+    raw = _ORDINAL.sub(r"\1", raw)
+    words: list[str] = []
+    lines: set[str] = set()
+    for word in raw.split():
+        if word in {"station", "stop", "subway", "train", "the", "at"}:
+            continue
+        if word in _ABBREV:
+            word = _ABBREV[word]
+        if len(word) == 1 and word.upper() in _LINE_LETTERS:
+            lines.add(word.upper())
+            continue
+        if word in _NUMBER_LINES:
+            lines.add(word)
+            continue
+        words.append(word)
+    return tuple(words), frozenset(lines)
+
+
+def asks_for_station(query: str) -> bool:
+    return bool(re.search(r"\b(station|stop|subway|train)\b", query.lower()))
+
+
+def is_borough_label(label: str) -> bool:
+    return label.strip().lower() in _BOROUGHS
 
 
 def lookup_local(query: str) -> dict[str, object] | None:
@@ -98,18 +144,25 @@ def lookup_local(query: str) -> dict[str, object] | None:
     if re.fullmatch(r"\d{5}", text) and text in _ZIPS:
         lat, lng, label, borough = _ZIPS[text]
         return {"label": label, "lat": lat, "lng": lng, "borough": borough}
-    folded = _norm(text)
-    if not folded:
+    words, lines = _words_and_lines(text)
+    if not asks_for_station(text) and not lines:
         return None
-    asking_station = bool(re.search(r"\b(station|stop|subway|train)\b", text.lower()))
-    best: tuple[int, tuple[str, float, float, str]] | None = None
-    for station in _STATIONS:
-        name = _norm(station[0])
-        if folded == name or (asking_station and (folded in name or name in folded)):
-            score = len(name)
-            if best is None or score > best[0]:
-                best = (score, station)
+    if not words:
+        return {"ask": True}
+    best: tuple[int, int, tuple[str, float, float, str, frozenset[str]]] | None = None
+    for station in stations():
+        if lines and not lines <= station[4]:
+            continue
+        station_words, _station_lines = _words_and_lines(station[0])
+        if not station_words:
+            continue
+        if not set(words) <= set(station_words):
+            continue
+        extra = len(station_words) - len(words)
+        score = len(words) * 10 - extra
+        if best is None or score > best[0] or (score == best[0] and extra < best[1]):
+            best = (score, extra, station)
     if best is None:
-        return None
-    name, lat, lng, borough = best[1]
+        return {"ask": True} if asks_for_station(text) or bool(lines) else None
+    name, lat, lng, borough, _lines = best[2]
     return {"label": name, "lat": lat, "lng": lng, "borough": borough}
