@@ -180,9 +180,7 @@ def test_refresh_does_not_drop_the_film_mid_fetch(db: Database, monkeypatch: obj
         }
 
     monkeypatch.setattr("moviexfone.sources.refresh.fetch_assemble_city", fake_city)  # type: ignore[attr-defined]
-    refresh_assemble(
-        db, now=NOW + timedelta(hours=2), budget=RequestBudget(), only_title="Verity"
-    )
+    refresh_assemble(db, now=NOW + timedelta(hours=2), budget=RequestBudget(), only_title="Verity")
     times = [
         str(row["starts_at"])
         for row in db.query(
