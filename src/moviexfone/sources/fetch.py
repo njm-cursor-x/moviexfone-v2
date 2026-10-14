@@ -61,11 +61,18 @@ def fetch_alamo(client: AllowedClient | None = None) -> list[IncomingShow]:
             http.close()
 
 
-def nitehawk_day_url(base: str, day: object, *, first: bool) -> str:
+def nitehawk_day_url(base: str, day: object, *, first: bool = False) -> str:
+    """Every day uses /<venue>/YYYY-MM-DD/1/, including today.
+
+    The homepage can still show yesterday between midnight and the site's
+    rollover, so day 0 is not the homepage. `first` is unused and kept so
+    older callers stay valid.
+    """
+    del first
     stamp = getattr(day, "isoformat", lambda: "")()
-    if first or not stamp:
+    if not stamp:
         return base
-    return f"{base}/{stamp}/1/"
+    return f"{base.rstrip('/')}/{stamp}/1/"
 
 
 def fetch_nitehawk(client: AllowedClient | None = None) -> list[IncomingShow]:

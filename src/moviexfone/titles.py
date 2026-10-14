@@ -92,6 +92,35 @@ def score_title(query: str, candidate: str) -> float:
     return ratio
 
 
+def matching_sequels(
+    query: str,
+    catalog: list[tuple[str, str, list[str]]],
+) -> list[TitleHit]:
+    """Parts of one title. 'Home Invasion' offers 1 and 2; it does not pick one."""
+    if sequel_mark(query) is not None:
+        return []
+    stem = _stem(query)
+    if len(stem) < 3:
+        return []
+    found: list[TitleHit] = []
+    seen: set[str] = set()
+    for movie_id, title, aliases in catalog:
+        names = [title, *aliases]
+        if not any(_stem(name) == stem and sequel_mark(name) is not None for name in names):
+            continue
+        if movie_id in seen:
+            continue
+        seen.add(movie_id)
+        found.append(TitleHit(movie_id, title, 0.95))
+    found.sort(key=lambda hit: (sequel_mark(hit.title) or "999", hit.title))
+    return found
+
+
+def _exact_without_sequel(query: str, hits: list[TitleHit]) -> bool:
+    stem = _stem(query)
+    return any(_stem(hit.title) == stem and sequel_mark(hit.title) is None for hit in hits)
+
+
 def best_titles(
     query: str,
     catalog: list[tuple[str, str, list[str]]],
@@ -137,6 +166,12 @@ def resolve_title(
         if len(word_hits) == 1:
             return None, word_hits
     hits = best_titles(query, catalog, limit=3)
+    family = matching_sequels(query, catalog)
+    if family and not _exact_without_sequel(query, hits):
+        if len(family) >= 2:
+            return None, family
+        if not hits:
+            return family[0], []
     if not hits:
         return None, []
     top = hits[0]

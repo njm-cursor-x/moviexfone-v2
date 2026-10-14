@@ -168,6 +168,33 @@ def refresh_assemble(
     return total
 
 
+class FirstPartyRefresher:
+    """Refreshes Alamo and Nitehawk on a timer. Startup alone misses a midnight rollover."""
+
+    def __init__(self, db: Database, *, interval_s: float = 45 * 60) -> None:
+        self._db = db
+        self._interval = interval_s
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._run, name="first-party-refresh", daemon=True)
+
+    def start(self) -> None:
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+        self._thread.join(timeout=2)
+
+    def _run(self) -> None:
+        from moviexfone.catalog import refresh_live
+        from moviexfone.timeutil import now_ny
+
+        while not self._stop.wait(self._interval):
+            try:
+                refresh_live(self._db, now=now_ny())
+            except Exception as exc:
+                log.warning("first-party refresh failed: %s", type(exc).__name__)
+
+
 class AssembleRefresher:
     """Fetches one title when a search asks, plus one cold pass. No timer over every film."""
 

@@ -32,7 +32,7 @@ from moviexfone.log import configure_logging
 from moviexfone.query import end_call, get_movie_info, search_showtimes
 from moviexfone.service import ask
 from moviexfone.sources.fetch import geosearch
-from moviexfone.sources.refresh import AssembleRefresher, refresh_assemble
+from moviexfone.sources.refresh import AssembleRefresher, FirstPartyRefresher, refresh_assemble
 from moviexfone.timeutil import now_ny, resolve_when
 from moviexfone.voice.bridge import handle_voice_socket
 from moviexfone.voice.prompt import GREETING, system_prompt
@@ -52,15 +52,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         db = Database(settings.db_path)
         seed(db, settings.data_dir, now=now_ny(), include_showtimes=not settings.live_data)
         refresher: AssembleRefresher | None = None
+        first_party: FirstPartyRefresher | None = None
         if settings.live_data:
             from moviexfone.catalog import refresh_live
 
             refresh_live(db, now=now_ny())
+            first_party = FirstPartyRefresher(db)
+            first_party.start()
             refresher = AssembleRefresher(db, ttl_seconds=settings.assemble_ttl_seconds)
             refresher.start()
         app.state.db = db
         app.state.settings = settings
         app.state.refresher = refresher
+        app.state.first_party = first_party
         from moviexfone.api.security import RateLimiter
 
         app.state.limiter = RateLimiter(settings.rate_limit_per_minute)
@@ -75,6 +79,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             yield
         finally:
+            if first_party is not None:
+                first_party.stop()
             if refresher is not None:
                 refresher.stop()
             db.close()

@@ -224,6 +224,10 @@ def test_nitehawk_future_days_use_a_path() -> None:
         "https://nitehawkcinema.com/prospectpark", date(2026, 10, 14), first=False
     )
     assert url == "https://nitehawkcinema.com/prospectpark/2026-10-14/1/"
+    today = nitehawk_day_url(
+        "https://nitehawkcinema.com/prospectpark", date(2026, 10, 14), first=True
+    )
+    assert today == "https://nitehawkcinema.com/prospectpark/2026-10-14/1/"
 
 
 def test_place_answer_names_the_theater_once() -> None:

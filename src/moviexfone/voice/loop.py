@@ -22,6 +22,7 @@ LIMIT_RESULT = {
 }
 FILLER_TEXT = "One sec."
 SILENCE_PROMPT = "Anything else?"
+_ENJOY = re.compile(r"enjoy the show", re.IGNORECASE)
 _GOODBYE = re.compile(
     r"\b(goodbye|bye|good night|goodnight|thanks|thank you|that's all|thats all|"
     r"that's it|thats it|i'm done|im done|hang up|all set)\b",
@@ -55,10 +56,13 @@ class ToolLoop:
         self._last_user = ""
         self._silence_prompted = False
         self._goodbye_pending = False
+        self._assistant_text = ""
 
     async def handle_server_event(self, event: dict[str, Any]) -> list[dict[str, Any]]:
         kind = event.get("type")
+        self._absorb_assistant(event)
         if kind == "response.created":
+            self._assistant_text = ""
             self._response_active = True
         if kind == "response.created" and self._awaiting_filler_id:
             response = event.get("response")
@@ -115,6 +119,26 @@ class ToolLoop:
             return await self._submit()
         return []
 
+    def _absorb_assistant(self, event: dict[str, Any]) -> None:
+        kind = event.get("type")
+        if kind in {"response.output_audio_transcript.delta", "response.audio_transcript.delta"}:
+            self._assistant_text += str(event.get("delta") or "")
+            return
+        if kind != "response.done":
+            return
+        response = event.get("response")
+        if not isinstance(response, dict):
+            return
+        for item in response.get("output") or []:
+            if not isinstance(item, dict):
+                continue
+            for part in item.get("content") or []:
+                if not isinstance(part, dict):
+                    continue
+                text = part.get("transcript") or part.get("text") or ""
+                if text and str(text) not in self._assistant_text:
+                    self._assistant_text += str(text)
+
     def _is_filler(self, event: dict[str, Any]) -> bool:
         if not self._filler_response_id:
             return False
@@ -139,6 +163,9 @@ class ToolLoop:
         names = [name for _call_id, name, _args in batch]
         if "end_call" in names:
             if _GOODBYE.search(self._last_user):
+                if _ENJOY.search(self._assistant_text):
+                    messages.append({"type": "call.end"})
+                    return messages
                 self._goodbye_pending = True
                 messages.append(_force("Enjoy the show."))
                 return messages

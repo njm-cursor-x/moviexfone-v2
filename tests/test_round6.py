@@ -142,7 +142,7 @@ def test_pauses_do_not_hang_up_and_a_long_silence_asks_once(
     asyncio.run(run())
 
 
-def test_committed_noise_nudges_once_then_ends(settings: Settings, db: Database) -> None:
+def test_dead_upstream_hangs_up_without_a_nudge(settings: Settings, db: Database) -> None:
     upstream = _Up()
     _install(upstream)
     client = _Client()
@@ -163,20 +163,14 @@ def test_committed_noise_nudges_once_then_ends(settings: Settings, db: Database)
             if any(item.get("type") == "session.ready" for item in client.sent):
                 break
         await upstream.queue.put(json.dumps({"type": "input_audio_buffer.committed"}))
-        for _ in range(40):
-            await asyncio.sleep(0.05)
-            if any("didn't catch that" in payload for payload in upstream.sent):
-                break
-        assert any("didn't catch that" in payload for payload in upstream.sent)
-        assert not task.done()
-        assert not any("lost the line" in str(item.get("message", "")) for item in client.sent)
+        await upstream.queue.put(json.dumps({"type": "ping"}))
         for _ in range(40):
             await asyncio.sleep(0.05)
             if any("lost the line" in str(item.get("message", "")) for item in client.sent):
                 break
         assert any("lost the line" in str(item.get("message", "")) for item in client.sent)
+        assert not any("didn't catch that" in payload for payload in upstream.sent)
         await asyncio.wait_for(task, timeout=2)
-        assert sum("didn't catch that" in payload for payload in upstream.sent) == 1
 
     asyncio.run(run())
 

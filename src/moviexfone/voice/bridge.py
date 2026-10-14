@@ -283,7 +283,22 @@ async def _run_live(
             last_upstream = time.monotonic()
             silence_prompted = False
             expecting = False
+            alive_since_turn = False
+            nudged = False
             goodbye_fallback: asyncio.Task[None] | None = None
+
+            def begin_wait() -> None:
+                """A new turn. Pings and this opening event do not prove the line is up."""
+                nonlocal expecting, alive_since_turn, nudged
+                expecting = True
+                alive_since_turn = False
+                nudged = False
+
+            def note_alive(kind: str | None) -> None:
+                nonlocal alive_since_turn
+                if kind in {"ping", "pong"} or not expecting:
+                    return
+                alive_since_turn = True
 
             def note_speech() -> None:
                 """Mic frames arrive continuously. Only real speech resets the prompt."""
@@ -334,7 +349,7 @@ async def _run_live(
                             )
                         )
                     elif kind == "text":
-                        expecting = True
+                        begin_wait()
                         await send_upstream(
                             json.dumps(
                                 {
@@ -369,7 +384,9 @@ async def _run_live(
                         "input_audio_buffer.speech_stopped",
                         "input_audio_buffer.committed",
                     }:
-                        expecting = True
+                        begin_wait()
+                    else:
+                        note_alive(str(kind) if kind is not None else None)
                     if kind in {"response.done", "error"}:
                         expecting = False
                     if kind in {"response.output_audio.delta", "input_audio_buffer.speech_started"}:
@@ -405,7 +422,7 @@ async def _run_live(
                             return
                         await send_upstream(json.dumps(item))
                         if _expects_reply(item):
-                            expecting = True
+                            begin_wait()
                             note_upstream()
                         if _is_goodbye(item):
                             await websocket.send_json(
@@ -462,8 +479,8 @@ async def _run_live(
                 await asyncio.Event().wait()
 
             async def watchdog() -> str:
+                nonlocal nudged
                 cap_at = time.monotonic() + settings.max_session_seconds
-                nudged = False
                 while True:
                     await asyncio.sleep(min(1.0, quiet_s))
                     now = time.monotonic()
@@ -473,7 +490,9 @@ async def _run_live(
                         last_upstream, now, expecting=expecting, quiet_s=quiet_s
                     ):
                         continue
-                    # Committed noise can get no reply. Ask once, then end on a second stall.
+                    # A dead socket never hears a nudge. Hang up on the first trip.
+                    if not alive_since_turn:
+                        return "quiet"
                     if not nudged:
                         nudged = True
                         note_upstream()

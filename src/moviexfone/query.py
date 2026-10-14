@@ -256,8 +256,13 @@ def _movie(db: Database, movie: str | None) -> tuple[str | None, str | None, dic
     catalog = _catalog(db)
     hit, suggestions = resolve_title(movie, catalog)
     if hit is None:
-        names = [item.title for item in suggestions]
-        if names:
+        names = [spoken_title(item.title) for item in suggestions]
+        if len(names) >= 2:
+            if len(names) == 2:
+                speak = f"Do you mean {names[0]} or {names[1]}?"
+            else:
+                speak = "Do you mean " + ", ".join(names[:-1]) + f", or {names[-1]}?"
+        elif names:
             speak = f"Do you mean {names[0]}?"
         else:
             speak = "I don't have that title. Try another one?"
@@ -582,6 +587,9 @@ def _alternative(
         ]
         elsewhere = True
     if not pool:
+        other_day = _other_day(rows, resolution, movie_id, movie_title, date_spoken, now)
+        if other_day is not None:
+            return other_day
         if _title_not_fetched(db, movie_id):
             speak = f"I don't have times for {spoken_title(movie_title)} at {resolution.label} yet."
         else:
@@ -665,6 +673,55 @@ def _alternative(
     }
 
 
+def _other_day(
+    rows: list[_Row],
+    resolution: Resolution,
+    movie_id: str,
+    movie_title: str,
+    date_spoken: str,
+    now: datetime,
+) -> dict[str, Any] | None:
+    """Nearest other date for this title at this theater, when the asked day is empty."""
+    upcoming = [
+        row
+        for row in rows
+        if row.movie_id == movie_id and row.starts_at >= now and _in_resolution(row, resolution)
+    ]
+    if not upcoming:
+        return None
+    first = min(upcoming, key=lambda row: (row.starts_at, row.local_t))
+    today = business_date(now).isoformat()
+    tomorrow = (business_date(now) + timedelta(days=1)).isoformat()
+    if first.business_date == today:
+        when = "today"
+    elif first.business_date == tomorrow:
+        when = "tomorrow"
+    else:
+        when = first.starts_at.astimezone(NY).strftime("%A")
+    title = spoken_title(movie_title)
+    clock = spoken_time(first.local_t)
+    if not clock.endswith("."):
+        clock = f"{clock}."
+    speak = f"{title} plays {when} at {clock} at {first.theater}."
+    return {
+        "resolved_location": _resolved_json(resolution),
+        "date_spoken": date_spoken,
+        "results": [],
+        "more_results": 0,
+        "nearest_alternative": {
+            "theater": first.theater,
+            "movie": title,
+            "times": [display_time(first.local_t)],
+            "ticket_url": first.ticket_url,
+        },
+        "speak": speak,
+        "note": "That day is empty here. The nearest date at this theater is in speak. Do not say the times are not loaded.",
+        "coverage_note": None,
+        "source": first.source,
+        "data_as_of": iso_ny(now),
+    }
+
+
 def _clock_sentence(prefix: str, clock: str) -> str:
     text = f"{prefix} {clock}".rstrip()
     if text.endswith("."):
@@ -699,20 +756,10 @@ def _later_tonight(
         return None
     spoken = date_spoken.lower()
     named_tonight = "tonight" in spoken
+    # A late ask with no date still means tonight. tonight_after sets the floor to now.
     evening_today = spoken == "today" and after is not None and after >= time(17, 0)
     if not named_tonight and not evening_today:
         return None
-    if evening_today:
-        today = business_date(now).isoformat()
-        had_show = any(
-            row.business_date == today
-            and row.starts_at < now
-            and (movie_id is None or row.movie_id == movie_id)
-            and _in_resolution(row, resolution)
-            for row in rows
-        )
-        if not had_show:
-            return None
     tomorrow = (business_date(now) + timedelta(days=1)).isoformat()
     upcoming = [
         row
