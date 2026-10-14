@@ -64,9 +64,10 @@ def test_page_does_not_put_the_secret_in_the_url() -> None:
 
 def test_assemble_rows_are_served_by_theater_name(db: Database) -> None:
     db.execute("UPDATE theater SET covered = 0")
+    lincoln = "amc-lincoln-square-13"
     rows = [
         IncomingShow(
-            theater_key="amc-lincoln-square-13",
+            theater_key=lincoln,
             movie_title="Verity",
             starts_at=datetime(2026, 10, 14, 19, 0, tzinfo=NY),
             format_norm="unknown",
