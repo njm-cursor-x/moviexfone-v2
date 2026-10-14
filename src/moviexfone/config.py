@@ -46,6 +46,8 @@ class Settings:
     max_session_seconds: int
     basic_user: str | None = None
     basic_password: str | None = None
+    daily_sessions: int = 20
+    session_allow_hosts: tuple[str, ...] = ()
 
     @classmethod
     def from_env(cls, env_file: Path | None = None) -> Settings:
@@ -74,6 +76,12 @@ class Settings:
             max_session_seconds=int(os.environ.get("MOVIEXFONE_MAX_SESSION", "900")),
             basic_user=os.environ.get("MOVIEXFONE_BASIC_USER", "").strip() or None,
             basic_password=os.environ.get("MOVIEXFONE_BASIC_PASSWORD", "").strip() or None,
+            daily_sessions=int(os.environ.get("MOVIEXFONE_DAILY_SESSIONS", "20")),
+            session_allow_hosts=tuple(
+                part.strip()
+                for part in os.environ.get("MOVIEXFONE_SESSION_ALLOW_HOSTS", "").split(",")
+                if part.strip()
+            ),
         )
 
     @property

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import json
 import logging
 import re
@@ -160,9 +161,25 @@ def fetch_assemble_film(
             http.close()
 
 
+def normalize_film_query(title: str) -> tuple[str, str | None]:
+    """Drop a year or format suffix and unescape HTML before an Assemble search."""
+    text = html.unescape(title)
+    year_match = re.search(r"\((19|20)\d{2}\)", text)
+    year = year_match.group(0)[1:-1] if year_match else None
+    text = re.sub(r"\s*\((?:19|20)\d{2}\)", "", text)
+    text = re.sub(
+        r"\s*\((?:subtitled|dubbed|remastered|extended|director'?s cut)\)",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(r"\s+", " ", text).strip()
+    return text, year
+
+
 def lookup_film_id(title: str, *, client: AllowedClient) -> str | None:
     """Resolve a catalog title through Assemble's find_film tool. The REST search paths 404."""
-    cleaned = re.sub(r"\s+", " ", title).strip()
+    cleaned, year = normalize_film_query(title)
     if not cleaned or len(cleaned) > 120:
         return None
     return _read_film_id(
@@ -170,6 +187,7 @@ def lookup_film_id(title: str, *, client: AllowedClient) -> str | None:
         ASSEMBLE_MCP,
         None,
         cleaned,
+        year=year,
         post={
             "jsonrpc": "2.0",
             "id": 1,
@@ -185,6 +203,7 @@ def _read_film_id(
     params: dict[str, str] | None,
     title: str,
     post: dict[str, object] | None = None,
+    year: str | None = None,
 ) -> str | None:
     try:
         if post is None:
@@ -199,7 +218,7 @@ def _read_film_id(
         payload = response.json()
     except ValueError:
         return None
-    return _film_id_from(_expand_mcp_text(payload), title)
+    return _film_id_from(_expand_mcp_text(payload), title, year=year)
 
 
 def _expand_mcp_text(payload: object) -> object:
@@ -226,9 +245,9 @@ def _expand_mcp_text(payload: object) -> object:
     return {"payload": payload, "text": extra}
 
 
-def _film_id_from(payload: object, title: str) -> str | None:
+def _film_id_from(payload: object, title: str, *, year: str | None = None) -> str | None:
     wanted = re.sub(r"[^a-z0-9]+", " ", title.lower()).strip()
-    found: list[str] = []
+    found: list[tuple[str, str]] = []
 
     def walk(node: object) -> None:
         if isinstance(node, dict):
@@ -240,11 +259,18 @@ def _film_id_from(payload: object, title: str) -> str | None:
                     break
             folded = re.sub(r"[^a-z0-9]+", " ", label.lower()).strip() if label else ""
             if folded == wanted:
+                film_id = ""
                 for key in ("film", "tmdb_id", "film_id", "id"):
                     value = node.get(key)
                     if isinstance(value, (str, int)) and re.fullmatch(r"\d{2,12}", str(value)):
-                        found.append(str(value))
+                        film_id = str(value)
                         break
+                if film_id:
+                    hint = " ".join(
+                        str(node.get(key) or "")
+                        for key in ("year", "release_year", "playing_from", "release_date")
+                    )
+                    found.append((film_id, hint))
             for value in node.values():
                 walk(value)
         elif isinstance(node, list):
@@ -252,7 +278,13 @@ def _film_id_from(payload: object, title: str) -> str | None:
                 walk(value)
 
     walk(payload)
-    return found[0] if found else None
+    if not found:
+        return None
+    if year:
+        for film_id, hint in found:
+            if year in hint:
+                return film_id
+    return found[0][0]
 
 
 def geosearch(text: str, client: AllowedClient | None = None) -> dict[str, Any] | None:

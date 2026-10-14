@@ -84,7 +84,7 @@ export MOVIEXFONE_TOOL_SECRET='a-long-random-string'
 python -m moviexfone
 ```
 
-Live voice will not start without that secret. Open `http://127.0.0.1:8000`. The page asks `POST /v1/voice/ticket` for a one-minute ticket and opens the socket with that ticket. Do not put `MOVIEXFONE_TOOL_SECRET` in the page URL. The `Origin` header is not authentication. A bind other than localhost also requires `MOVIEXFONE_BASIC_USER` and `MOVIEXFONE_BASIC_PASSWORD`. Tickets are limited to 5 a minute per address. The page does not reconnect a live call by itself.
+Live voice will not start without that secret. Open `http://127.0.0.1:8000`. The page asks `POST /v1/voice/ticket` for a one-minute ticket and opens the socket with that ticket. Do not put `MOVIEXFONE_TOOL_SECRET` in the page URL. The `Origin` header is not authentication. A bind other than localhost also requires `MOVIEXFONE_BASIC_USER` and `MOVIEXFONE_BASIC_PASSWORD`, and `/health/data` uses that same gate. A localhost bind does not, even if a tunnel makes the port reachable, so do not publish a loopback process. Tickets are limited to 5 a minute per address. `MOVIEXFONE_DAILY_SESSIONS` (default 20) counts established calls and is stored in SQLite. `MOVIEXFONE_SESSION_ALLOW_HOSTS` skips that daily cap. The page does not reconnect a live call by itself.
 
 The key stays on the server. The page streams 24 kHz PCM to `/ws/voice` and plays the reply audio. The server opens `wss://api.x.ai/v1/realtime?model=grok-voice-think-fast-2.0`. One live session at a time. The bridge:
 

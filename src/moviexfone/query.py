@@ -172,12 +172,18 @@ def search_showtimes(
     ]
     if used:
         oldest = min(row.fetched_at for row in used)
-    if movie_id is None and any(card.source == "assemble" for card in chosen):
-        missing = db.query_one(
+    first_party = chosen and all(
+        card.source in {"alamo_json", "nitehawk_jsonld"} for card in chosen
+    )
+    if movie_id is None and chosen and not first_party:
+        started = db.query_one("SELECT COUNT(*) AS n FROM assemble_status")
+        pending = db.query_one(
             """SELECT COUNT(*) AS n FROM movie m
-               WHERE NOT EXISTS (SELECT 1 FROM showtime s WHERE s.movie_id = m.movie_id)"""
+               WHERE NOT EXISTS (
+                   SELECT 1 FROM assemble_status s WHERE s.movie_id = m.movie_id
+               )"""
         )
-        if missing and int(missing["n"]) > 0:
+        if started and int(started["n"]) > 0 and pending and int(pending["n"]) > 0:
             speak = f"{speak} I only have live times for some titles.".strip()
     payload = _payload(resolution, date_spoken, chosen, more, speak, oldest)
     if not chosen:
@@ -576,7 +582,7 @@ def _alternative(
         elsewhere = True
     if not pool:
         if _title_not_fetched(db, movie_id):
-            speak = f"I don't have live times for {movie_title} yet."
+            speak = f"I don't have times for {movie_title} at {resolution.label} yet."
         else:
             speak = f"No screenings listed for {movie_title}. Want another movie or neighborhood?"
         return {
@@ -624,11 +630,17 @@ def _alternative(
         )
         clock = spoken_time(only.times_local[0])
         where = resolution.label
-        speak = (
-            f"No screenings listed for {movie_title} at {where}"
-            + (f" after {_after_words(after)}" if after and not elsewhere else "")
-            + f". The closest is {clock} at {only.theater}."
-        )
+        if _title_not_fetched(db, movie_id):
+            speak = (
+                f"I don't have times for {movie_title} at {where} yet. "
+                f"The closest I already have is {clock} at {only.theater}."
+            )
+        else:
+            speak = (
+                f"No screenings listed for {movie_title} at {where}"
+                + (f" after {_after_words(after)}" if after and not elsewhere else "")
+                + f". The closest is {clock} at {only.theater}."
+            )
         fmt = only.format_norm if only.format_norm in _SPECIAL_FORMATS else None
         alternative = {
             "theater": only.theater,
@@ -653,17 +665,16 @@ def _alternative(
 
 
 def _title_not_fetched(db: Database, movie_id: str) -> bool:
+    """True until Assemble has finished a pass for this title.
+
+    Rows from Alamo or Nitehawk do not count. Those feeds do not cover AMC or Regal,
+    and saying "no screenings" during warm-up is a false answer.
+    """
     checked = db.query_one(
         "SELECT 1 AS n FROM assemble_status WHERE movie_id = ?",
         (movie_id,),
     )
-    if checked is not None:
-        return False
-    any_row = db.query_one(
-        "SELECT 1 AS n FROM showtime WHERE movie_id = ? LIMIT 1",
-        (movie_id,),
-    )
-    return any_row is None
+    return checked is None
 
 
 def _later_tonight(
@@ -673,7 +684,9 @@ def _later_tonight(
     date_spoken: str,
     now: datetime,
 ) -> dict[str, Any] | None:
-    if resolution.kind != "theater" or not resolution.covered:
+    if resolution.kind == "theater" and not resolution.covered:
+        return None
+    if resolution.kind not in {"theater", "place"}:
         return None
     if "tonight" not in date_spoken.lower():
         return None
@@ -689,10 +702,8 @@ def _later_tonight(
     if not upcoming:
         return None
     first = min(upcoming, key=lambda row: row.starts_at)
-    speak = (
-        f"Nothing else tonight. Tomorrow the first show is {first.movie} "
-        f"at {spoken_time(first.local_t)}."
-    )
+    clock = spoken_time(first.local_t).rstrip(".")
+    speak = f"Nothing else tonight. Tomorrow the first show is {first.movie} at {clock}."
     return {
         "resolved_location": _resolved_json(resolution),
         "date_spoken": date_spoken,

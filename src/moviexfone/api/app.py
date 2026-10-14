@@ -65,7 +65,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
         app.state.limiter = RateLimiter(settings.rate_limit_per_minute)
         app.state.ticket_limiter = RateLimiter(5)
-        app.state.sessions = SessionCaps()
+        app.state.sessions = SessionCaps(
+            db,
+            daily=settings.daily_sessions,
+            allow_hosts=settings.session_allow_hosts,
+        )
         app.state.tickets = VoiceTickets()
         log.info("ready voice_mode=%s live_data=%s", settings.voice_mode, settings.live_data)
         try:
@@ -80,7 +84,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.middleware("http")
     async def basic_gate(request: Request, call_next: Any) -> Response:
         path = request.url.path
-        gated = path in {"/", "/v1/voice/ticket"} or path.startswith("/static")
+        gated = path in {"/", "/v1/voice/ticket", "/health/data"} or path.startswith("/static")
         if (
             gated
             and settings.basic_user
@@ -294,12 +298,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not websocket.app.state.limiter.allow(f"ws:{host}"):
             await websocket.close(code=1008)
             return
-        blocked = websocket.app.state.sessions.allow(host)
+        blocked = websocket.app.state.sessions.hold(host)
         if blocked:
             await websocket.accept()
             await websocket.send_json({"type": "error", "message": blocked})
             await websocket.close(code=1013)
-            websocket.app.state.sessions.release(host)
             return
         try:
             await handle_voice_socket(
@@ -308,6 +311,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 websocket.app.state.db,
                 refresher=getattr(websocket.app.state, "refresher", None),
                 tickets=getattr(websocket.app.state, "tickets", None),
+                sessions=websocket.app.state.sessions,
+                client_host=host,
             )
         finally:
             websocket.app.state.sessions.release(host)
@@ -332,13 +337,14 @@ def _search_from_body(db: Database, body: SearchIn, settings: Settings) -> dict[
     window = resolve_when(body.date, now)
     dates, spoken, unclear = window.dates, window.spoken, window.unclear
     after = body.after_time or (window.after.strftime("%H:%M") if window.after else None)
+    before = body.before_time or (window.before.strftime("%H:%M") if window.before else None)
     return search_showtimes(
         db,
         location=body.location,
         movie=body.movie,
         dates=dates,
         after_time=after,
-        before_time=window.before.strftime("%H:%M") if window.before else None,
+        before_time=before,
         format_name=body.format,
         page=body.page,
         now=now,

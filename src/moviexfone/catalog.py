@@ -62,13 +62,25 @@ def seed(
     as real listings.
     """
     with db.transaction():
-        db.execute("DELETE FROM showtime")
+        saved_ids = [
+            (str(row["title"]), str(row["tmdb_id"]))
+            for row in db.query(
+                "SELECT title, tmdb_id FROM movie WHERE tmdb_id IS NOT NULL AND tmdb_id != ''"
+            )
+        ]
+        if include_showtimes:
+            db.execute("DELETE FROM showtime")
         db.execute("DELETE FROM movie_alias")
         db.execute("DELETE FROM movie")
         db.execute("DELETE FROM theater_alias")
         db.execute("DELETE FROM theater")
         theater_count = _load_theaters(db, data)
         movie_count = _load_movies(db, data)
+        for title, film_id in saved_ids:
+            db.execute(
+                "UPDATE movie SET tmdb_id = ? WHERE lower(title) = lower(?)",
+                (film_id, title),
+            )
         if include_showtimes:
             shows = _fixture_shows(data)
             _apply(db, shows["assemble"], mode="insert", now=FIXTURE_FETCHED_AT)
@@ -222,7 +234,7 @@ def _apply(db: Database, rows: list[IncomingShow], *, mode: str, now: datetime) 
     resolved = [_ResolvedShow.from_incoming(db, row) for row in rows]
     kept = [row for row in resolved if row is not None]
     if kept and kept[0].source == "assemble":
-        kept = [row for row in kept if not _alamo_owns(db, row.theater_id)]
+        kept = [row for row in kept if not _first_party_day(db, row)]
     if not kept:
         return 0
     # Replace only the movie-days in this payload. An Alamo page is authoritative
@@ -231,6 +243,8 @@ def _apply(db: Database, rows: list[IncomingShow], *, mode: str, now: datetime) 
         (row.theater_id, row.movie_id, business_date(row.starts_at).isoformat()) for row in kept
     }
     for theater_id, movie_id, day in groups:
+        if kept[0].source == "assemble" and _first_party_day_key(db, theater_id, movie_id, day):
+            continue
         db.execute(
             """DELETE FROM showtime
                WHERE theater_id = ? AND movie_id = ? AND business_date = ?""",
@@ -404,6 +418,27 @@ def _alamo_owns(db: Database, theater_id: str) -> bool:
     return row is not None
 
 
+def _first_party_day(db: Database, row: _ResolvedShow) -> bool:
+    return _first_party_day_key(
+        db,
+        row.theater_id,
+        row.movie_id,
+        business_date(row.starts_at).isoformat(),
+    )
+
+
+def _first_party_day_key(db: Database, theater_id: str, movie_id: str, day: str) -> bool:
+    """True when Alamo or Nitehawk already published this film at this theater on this day."""
+    found = db.query_one(
+        """SELECT 1 AS present FROM showtime
+           WHERE theater_id = ? AND movie_id = ? AND business_date = ?
+             AND source IN ('alamo_json', 'nitehawk_jsonld')
+           LIMIT 1""",
+        (theater_id, movie_id, day),
+    )
+    return found is not None
+
+
 def _match_theater(db: Database, key: str) -> str | None:
     direct = db.query_one("SELECT theater_id FROM theater WHERE theater_id = ?", (key,))
     if direct:
@@ -561,7 +596,11 @@ def refresh_live(db: Database, *, now: datetime) -> dict[str, object]:
     try:
         rows = fetch_nitehawk()
         with db.transaction():
-            count = _apply(db, rows, mode="dates", now=now)
+            _apply(db, rows, mode="dates", now=now)
+            stored = db.query_one(
+                "SELECT COUNT(*) AS n FROM showtime WHERE source = 'nitehawk_jsonld'"
+            )
+            count = int(stored["n"]) if stored else 0
             record_ingest(
                 db, source="nitehawk_jsonld", now=now, ok=True, showtimes=count, error=None
             )

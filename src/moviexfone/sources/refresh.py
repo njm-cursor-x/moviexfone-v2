@@ -48,6 +48,10 @@ class RequestBudget:
             time.sleep(max(0.05, delay))
 
 
+# One bucket for warm-up, consider(), and /admin/refresh.
+GLOBAL_BUDGET = RequestBudget(limit=_MAX_PER_MINUTE)
+
+
 def assemble_is_fresh(
     db: Database, movie_id: str, *, now: datetime, ttl: timedelta | None = None
 ) -> bool:
@@ -75,7 +79,7 @@ def refresh_assemble(
     ttl: timedelta | None = None,
 ) -> int:
     """Fetch NYC cities for one stale catalog film, or each stale film when asked."""
-    limiter = budget or RequestBudget()
+    limiter = budget if budget is not None else GLOBAL_BUDGET
     own_client = client is None
     client = client or assemble_client(timeout=90.0)
     total = 0

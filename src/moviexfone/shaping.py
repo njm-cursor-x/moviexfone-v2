@@ -178,8 +178,13 @@ def trim_cards(
         more_after = extra
     hidden = sum(max(0, len(card.times_local) - times) for card in chosen)
     if hidden:
-        with_more = speak.rstrip(".")
-        with_more = f"{with_more}, and {hidden} more."
+        want = ""
+        base = speak
+        if base.endswith("Want more?"):
+            base = base[: -len("Want more?")].rstrip()
+            want = " Want more?"
+        base = base.rstrip(".")
+        with_more = f"{base}, and {hidden} more.{want}"
         if specific_movie or estimate_spoken_seconds(with_more) <= second_budget:
             speak = with_more
     trimmed: list[ShowCard] = []

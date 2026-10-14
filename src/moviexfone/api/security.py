@@ -167,29 +167,44 @@ def basic_auth_ok(header: str | None, user: str | None, password: str | None) ->
 
 
 class SessionCaps:
-    """Per-IP concurrent and daily voice sessions, plus one global line."""
+    """Per-IP concurrent holds, plus a persisted daily count of established sessions."""
 
-    def __init__(self, *, per_ip: int = 1, daily: int = 20) -> None:
+    def __init__(
+        self,
+        db: Any | None = None,
+        *,
+        per_ip: int = 1,
+        daily: int = 20,
+        allow_hosts: tuple[str, ...] = (),
+    ) -> None:
+        self.db = db
         self.per_ip = per_ip
         self.daily = daily
+        self.allow_hosts = {host.strip() for host in allow_hosts if host.strip()}
         self._lock = threading.Lock()
         self._open: dict[str, int] = {}
-        self._daily: dict[str, tuple[int, float]] = {}
+        self._memory_daily: dict[str, tuple[str, int]] = {}
 
-    def allow(self, host: str | None) -> str | None:
+    def hold(self, host: str | None) -> str | None:
+        """Take a concurrent slot. A rejection does not change any count."""
         key = host or "unknown"
-        now = time.time()
+        if key in self.allow_hosts:
+            return None
         with self._lock:
-            count, stamp = self._daily.get(key, (0, now))
-            if now - stamp > 86400:
-                count = 0
-            if count >= self.daily:
+            if self._daily_count(key) >= self.daily:
                 return "This line is closed for today. Try again tomorrow."
             if self._open.get(key, 0) >= self.per_ip:
                 return "The line is busy. Try again in a minute."
             self._open[key] = self._open.get(key, 0) + 1
-            self._daily[key] = (count + 1, stamp if count else now)
         return None
+
+    def commit(self, host: str | None) -> None:
+        """Count a session only after the ticket is accepted."""
+        key = host or "unknown"
+        if key in self.allow_hosts:
+            return
+        with self._lock:
+            self._add_daily(key)
 
     def release(self, host: str | None) -> None:
         key = host or "unknown"
@@ -199,6 +214,36 @@ class SessionCaps:
                 self._open[key] = left
             else:
                 self._open.pop(key, None)
+
+    def _day(self) -> str:
+        from moviexfone.timeutil import NY, now_ny
+
+        return now_ny().astimezone(NY).date().isoformat()
+
+    def _daily_count(self, key: str) -> int:
+        day = self._day()
+        if self.db is None:
+            stored_day, count = self._memory_daily.get(key, (day, 0))
+            return count if stored_day == day else 0
+        row = self.db.query_one(
+            "SELECT sessions FROM voice_session_day WHERE host = ? AND day = ?",
+            (key, day),
+        )
+        return int(row["sessions"]) if row else 0
+
+    def _add_daily(self, key: str) -> None:
+        day = self._day()
+        if self.db is None:
+            stored_day, count = self._memory_daily.get(key, (day, 0))
+            if stored_day != day:
+                count = 0
+            self._memory_daily[key] = (day, count + 1)
+            return
+        self.db.execute(
+            """INSERT INTO voice_session_day (host, day, sessions) VALUES (?, ?, 1)
+               ON CONFLICT(host, day) DO UPDATE SET sessions = sessions + 1""",
+            (key, day),
+        )
 
 
 def ticket_allowed(

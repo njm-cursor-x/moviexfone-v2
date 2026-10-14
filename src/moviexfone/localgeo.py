@@ -75,7 +75,8 @@ _ABBREV = {
     "sq": "square",
 }
 _ORDINAL = re.compile(r"\b(\d+)(?:st|nd|rd|th)\b")
-_LINE_LETTERS = set("ABCDEFGJLMNQRSZW")
+_LINE_LETTERS = set("ABCDEFGJLMNQRSZ")
+_DIRECTIONS = {"n": "north", "s": "south", "e": "east", "w": "west"}
 _NUMBER_LINES = {"1", "2", "3", "4", "5", "6", "7"}
 _BOROUGHS = {"brooklyn", "manhattan", "queens", "bronx", "staten island", "the bronx"}
 
@@ -110,21 +111,36 @@ def stations() -> tuple[tuple[str, float, float, str, frozenset[str]], ...]:
     return tuple(found)
 
 
+def speakable_station(name: str) -> str:
+    text = name.replace("–", "-").replace("—", "-")
+    text = re.sub(r"\bAv\b", "Avenue", text)
+    text = re.sub(r"\bSt\b", "Street", text)
+    text = re.sub(r"\bSq\b", "Square", text)
+    text = re.sub(r"\bCtr\b", "Center", text)
+    text = re.sub(r"\bBlvd\b", "Boulevard", text)
+    return text
+
+
 def _words_and_lines(text: str) -> tuple[tuple[str, ...], frozenset[str]]:
     raw = text.lower().replace("–", " ").replace("—", " ").replace("/", " ").replace("-", " ")
     raw = raw.replace(".", " ")
     raw = _ORDINAL.sub(r"\1", raw)
+    tokens = raw.split()
     words: list[str] = []
     lines: set[str] = set()
-    for word in raw.split():
+    for index, word in enumerate(tokens):
         if word in {"station", "stop", "subway", "train", "the", "at"}:
+            continue
+        nxt = tokens[index + 1] if index + 1 < len(tokens) else ""
+        if word in _DIRECTIONS and (nxt.isdigit() or nxt in _ABBREV or nxt in {"street", "avenue"}):
+            words.append(_DIRECTIONS[word])
             continue
         if word in _ABBREV:
             word = _ABBREV[word]
         if len(word) == 1 and word.upper() in _LINE_LETTERS:
             lines.add(word.upper())
             continue
-        if word in _NUMBER_LINES:
+        if word in _NUMBER_LINES and nxt in {"train", "line", ""}:
             lines.add(word)
             continue
         words.append(word)
@@ -145,7 +161,8 @@ def lookup_local(query: str) -> dict[str, object] | None:
         lat, lng, label, borough = _ZIPS[text]
         return {"label": label, "lat": lat, "lng": lng, "borough": borough}
     words, lines = _words_and_lines(text)
-    if not asks_for_station(text) and not lines:
+    stationish = asks_for_station(text) or bool(lines) or len(words) >= 2
+    if not stationish:
         return None
     if not words:
         return {"ask": True}
@@ -164,5 +181,17 @@ def lookup_local(query: str) -> dict[str, object] | None:
             best = (score, extra, station)
     if best is None:
         return {"ask": True} if asks_for_station(text) or bool(lines) else None
+    # A loose two-word match is only safe when one station contains every word.
+    if not asks_for_station(text) and not lines:
+        contained = [
+            station for station in stations() if set(words) <= set(_words_and_lines(station[0])[0])
+        ]
+        if len(contained) != 1:
+            return None
     name, lat, lng, borough, _lines = best[2]
-    return {"label": name, "lat": lat, "lng": lng, "borough": borough}
+    return {
+        "label": speakable_station(name),
+        "lat": lat,
+        "lng": lng,
+        "borough": borough,
+    }

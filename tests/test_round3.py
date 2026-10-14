@@ -154,12 +154,14 @@ def test_spoofed_origin_cannot_mint_a_ticket() -> None:
         is False
     )
     caps = SessionCaps(per_ip=1, daily=2)
-    assert caps.allow("172.30.0.2") is None
-    assert caps.allow("172.30.0.2") is not None
+    assert caps.hold("172.30.0.2") is None
+    assert caps.hold("172.30.0.2") is not None
     caps.release("172.30.0.2")
-    assert caps.allow("172.30.0.2") is None
+    caps.commit("172.30.0.2")
+    assert caps.hold("172.30.0.2") is None
     caps.release("172.30.0.2")
-    assert "today" in str(caps.allow("172.30.0.2"))
+    caps.commit("172.30.0.2")
+    assert "today" in str(caps.hold("172.30.0.2"))
 
 
 def test_public_bind_requires_basic_auth(tmp_path: object) -> None:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import re
 from urllib.parse import urlparse
 
@@ -49,7 +50,7 @@ def sanitize_display(text: str | None, *, limit: int = 180) -> str:
     """Return a single-line display string safe to put in a tool payload."""
     if not text:
         return ""
-    cleaned = _INVISIBLE.sub("", text)
+    cleaned = html.unescape(_INVISIBLE.sub("", text))
     cleaned = _CONTROL.sub(" ", cleaned)
     cleaned = re.sub(r"<\s*script\b[^>]*>.*?</\s*script\s*>", " ", cleaned, flags=re.I | re.S)
     cleaned = re.sub(r"<[^>]*>", " ", cleaned)

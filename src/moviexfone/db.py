@@ -81,6 +81,12 @@ CREATE TABLE IF NOT EXISTS assemble_status (
   movie_id TEXT PRIMARY KEY,
   checked_at TEXT
 );
+CREATE TABLE IF NOT EXISTS voice_session_day (
+  host TEXT NOT NULL,
+  day TEXT NOT NULL,
+  sessions INTEGER NOT NULL,
+  PRIMARY KEY (host, day)
+);
 """
 
 

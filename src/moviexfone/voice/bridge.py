@@ -37,6 +37,8 @@ async def handle_voice_socket(
     db: Database,
     refresher: Any | None = None,
     tickets: Any | None = None,
+    sessions: Any | None = None,
+    client_host: str | None = None,
 ) -> None:
     await websocket.accept()
     host = websocket.client.host if websocket.client else None
@@ -54,9 +56,24 @@ async def handle_voice_socket(
         await websocket.send_json({"type": "error", "message": reason or "not authorized"})
         await websocket.close(code=1008)
         return
+    if sessions is not None:
+        sessions.commit(client_host or host)
     if settings.voice_mode == "live":
         try:
-            await _run_live(websocket, settings, db, refresher)
+            await asyncio.wait_for(
+                _run_live(websocket, settings, db, refresher),
+                timeout=settings.max_session_seconds + 30,
+            )
+            return
+        except TimeoutError:
+            log.warning("voice session exceeded its hard cap")
+            with contextlib.suppress(Exception):
+                await asyncio.wait_for(
+                    websocket.send_json({"type": "error", "message": "Sorry, I lost the line."}),
+                    timeout=2,
+                )
+            with contextlib.suppress(Exception):
+                await asyncio.wait_for(websocket.close(code=1011), timeout=2)
             return
         except WebSocketDisconnect:
             return
@@ -116,11 +133,31 @@ def _session_budget(seconds: int) -> int:
     return int(max(60, seconds) * 64_000 * 1.2)
 
 
+def upstream_is_quiet(last_event: float, now: float, *, expecting: bool, quiet_s: float) -> bool:
+    """True when a reply was expected and the upstream has gone silent."""
+    return expecting and now - last_event >= quiet_s
+
+
+async def await_io(awaitable: Awaitable[Any], timeout: float) -> Any:
+    """Bound a socket read or write so a stalled peer cannot hold the line."""
+    return await asyncio.wait_for(awaitable, timeout)
+
+
+def abort_socket(sock: Any) -> None:
+    transport = getattr(sock, "transport", None)
+    abort = getattr(transport, "abort", None) if transport is not None else None
+    if callable(abort):
+        abort()
+
+
 async def _run_live(
     websocket: WebSocket,
     settings: Settings,
     db: Database,
     refresher: Any | None = None,
+    *,
+    io_timeout: float = 10,
+    quiet_s: float = 20,
 ) -> None:
     import websockets
 
@@ -148,13 +185,16 @@ async def _run_live(
             open_timeout=20,
             close_timeout=1,
         ) as upstream:
-            await upstream.send(
-                json.dumps(
-                    {
-                        "type": "session.update",
-                        "session": _session_body(db),
-                    }
-                )
+            await await_io(
+                upstream.send(
+                    json.dumps(
+                        {
+                            "type": "session.update",
+                            "session": _session_body(db),
+                        }
+                    )
+                ),
+                io_timeout,
             )
             try:
                 async with asyncio.timeout(10):
@@ -173,37 +213,51 @@ async def _run_live(
                 )
                 await websocket.close(code=1011)
                 return
-            await upstream.send(
-                json.dumps(
-                    {
-                        "type": "conversation.item.create",
-                        "item": {
-                            "type": "force_message",
-                            "role": "assistant",
-                            "interruptible": True,
-                            "content": [{"type": "output_text", "text": GREETING}],
-                        },
-                    }
-                )
+            await await_io(
+                upstream.send(
+                    json.dumps(
+                        {
+                            "type": "conversation.item.create",
+                            "item": {
+                                "type": "force_message",
+                                "role": "assistant",
+                                "interruptible": True,
+                                "content": [{"type": "output_text", "text": GREETING}],
+                            },
+                        }
+                    )
+                ),
+                io_timeout,
             )
             await websocket.send_json(
                 {"type": "session.ready", "mode": "live", "greeting": GREETING}
             )
             last_sound = time.monotonic()
+            last_upstream = time.monotonic()
             silence_prompted = False
+            expecting = False
 
-            def heard() -> None:
+            def note_speech() -> None:
+                """Mic frames arrive continuously. Only real speech resets the prompt."""
                 nonlocal last_sound
                 last_sound = time.monotonic()
+
+            def note_upstream() -> None:
+                nonlocal last_upstream
+                last_upstream = time.monotonic()
+
+            async def send_upstream(payload: str) -> None:
+                await await_io(upstream.send(payload), io_timeout)
 
             loop = ToolLoop(
                 lambda name, args: _execute(
                     db, name, args, live_data=settings.live_data, refresher=refresher
                 ),
-                send=_send_upstream(upstream),
+                send=_send_upstream(upstream, timeout=io_timeout),
             )
 
             async def client_to_upstream() -> None:
+                nonlocal expecting
                 received = 0
                 while True:
                     message = await websocket.receive_json()
@@ -214,7 +268,6 @@ async def _run_live(
                             await websocket.close(code=1009)
                             return
                         received += len(data)
-                        heard()
                         if received > _session_budget(settings.max_session_seconds):
                             await websocket.send_json(
                                 {
@@ -224,7 +277,8 @@ async def _run_live(
                             )
                             await websocket.close(code=1000)
                             return
-                        await upstream.send(
+                        expecting = True
+                        await send_upstream(
                             json.dumps(
                                 {
                                     "type": "input_audio_buffer.append",
@@ -233,7 +287,8 @@ async def _run_live(
                             )
                         )
                     elif kind == "text":
-                        await upstream.send(
+                        expecting = True
+                        await send_upstream(
                             json.dumps(
                                 {
                                     "type": "conversation.item.create",
@@ -250,18 +305,22 @@ async def _run_live(
                                 }
                             )
                         )
-                        await upstream.send(json.dumps({"type": "response.create"}))
+                        await send_upstream(json.dumps({"type": "response.create"}))
                     elif kind == "close":
                         return
 
             async def upstream_to_client() -> None:
+                nonlocal expecting
                 async for raw in upstream:
                     if isinstance(raw, bytes):
                         continue
                     event = json.loads(raw)
                     kind = event.get("type")
-                    if kind == "response.output_audio.delta":
-                        heard()
+                    note_upstream()
+                    if kind in {"response.done", "error"}:
+                        expecting = False
+                    if kind in {"response.output_audio.delta", "input_audio_buffer.speech_started"}:
+                        note_speech()
                     for outbound_event in _client_events(event):
                         await websocket.send_json(outbound_event)
                     if kind == "conversation.item.input_audio_transcription.completed":
@@ -289,7 +348,7 @@ async def _run_live(
                             await websocket.send_json({"type": "call.ended"})
                             await websocket.close(code=1000)
                             return
-                        await upstream.send(json.dumps(item))
+                        await send_upstream(json.dumps(item))
                         output = item.get("item")
                         if (
                             isinstance(output, dict)
@@ -309,7 +368,7 @@ async def _run_live(
                     if time.monotonic() - last_sound < 40:
                         continue
                     silence_prompted = True
-                    await upstream.send(
+                    await send_upstream(
                         json.dumps(
                             {
                                 "type": "conversation.item.create",
@@ -324,31 +383,61 @@ async def _run_live(
                     )
                     return
 
+            async def watchdog() -> str:
+                cap_at = time.monotonic() + settings.max_session_seconds
+                while True:
+                    await asyncio.sleep(min(1.0, quiet_s))
+                    now = time.monotonic()
+                    if now >= cap_at:
+                        return "cap"
+                    if upstream_is_quiet(last_upstream, now, expecting=expecting, quiet_s=quiet_s):
+                        return "quiet"
+
             client_task = asyncio.create_task(client_to_upstream())
             upstream_task = asyncio.create_task(upstream_to_client())
             silence_task = asyncio.create_task(silence_once())
-            limit = asyncio.create_task(asyncio.sleep(settings.max_session_seconds))
+            watch_task = asyncio.create_task(watchdog())
+            tasks = (client_task, upstream_task, silence_task, watch_task)
             try:
-                done, _pending = await asyncio.wait(
-                    {client_task, upstream_task, limit},
-                    return_when=asyncio.FIRST_COMPLETED,
+                done, _pending = await asyncio.wait(set(tasks), return_when=asyncio.FIRST_COMPLETED)
+                reason = "cap" if watch_task in done and watch_task.result() == "cap" else ""
+                quiet = watch_task in done and watch_task.result() == "quiet"
+
+                def _failed(task: asyncio.Task[Any]) -> bool:
+                    if task not in done:
+                        return False
+                    return task.exception() is not None
+
+                stalled = (
+                    quiet
+                    or _failed(upstream_task)
+                    or (client_task in done and isinstance(client_task.exception(), TimeoutError))
                 )
-                if limit in done and client_task not in done:
-                    await websocket.send_json(
-                        {"type": "error", "message": "This call has reached its time limit."}
+                if stalled or reason == "cap":
+                    abort_socket(upstream)
+                    note = (
+                        "Sorry, I lost the line."
+                        if stalled
+                        else "This call has reached its time limit."
                     )
-                if limit in done:
-                    try:
-                        await websocket.close(code=1000)
-                    except Exception:
-                        log.info("time cap close")
+                    with contextlib.suppress(Exception):
+                        await await_io(
+                            websocket.send_json({"type": "error", "message": note}),
+                            min(2, io_timeout),
+                        )
+                    with contextlib.suppress(Exception):
+                        await await_io(websocket.close(code=1011 if stalled else 1000), 2)
             finally:
+                # Free the line before waiting on pumps that may still be blocked.
                 release_slot()
-                for task in (client_task, upstream_task, silence_task, limit):
+                abort_socket(upstream)
+                for task in tasks:
                     task.cancel()
-                await asyncio.gather(
-                    client_task, upstream_task, silence_task, limit, return_exceptions=True
-                )
+                with contextlib.suppress(Exception):
+                    await asyncio.wait_for(
+                        asyncio.gather(*tasks, return_exceptions=True),
+                        timeout=2,
+                    )
                 with contextlib.suppress(Exception):
                     await asyncio.wait_for(upstream.close(), timeout=1)
     finally:
@@ -485,8 +574,10 @@ def _client_events(event: dict[str, Any]) -> list[dict[str, Any]]:
     return []
 
 
-def _send_upstream(upstream: Any) -> Callable[[dict[str, Any]], Awaitable[None]]:
+def _send_upstream(
+    upstream: Any, *, timeout: float = 10
+) -> Callable[[dict[str, Any]], Awaitable[None]]:
     async def send(message: dict[str, Any]) -> None:
-        await upstream.send(json.dumps(message))
+        await await_io(upstream.send(json.dumps(message)), timeout)
 
     return send
