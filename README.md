@@ -10,6 +10,7 @@ MovieXFone is an internal codename. A live trademark (USPTO Reg. 2822672) covers
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
+# or: pip install -r requirements-dev.txt && pip install -e .
 python -m moviexfone
 ```
 

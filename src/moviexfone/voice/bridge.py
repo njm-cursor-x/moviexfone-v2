@@ -133,6 +133,22 @@ def _session_budget(seconds: int) -> int:
     return int(max(60, seconds) * 64_000 * 1.2)
 
 
+def _resets_upstream_watch(kind: str | None) -> bool:
+    """Keepalive pings must not hide a stalled reply."""
+    return kind in {
+        "response.created",
+        "response.output_audio.delta",
+        "response.output_audio_transcript.delta",
+        "response.done",
+        "response.function_call_arguments.delta",
+        "response.function_call_arguments.done",
+        "input_audio_buffer.speech_started",
+        "input_audio_buffer.speech_stopped",
+        "conversation.item.input_audio_transcription.completed",
+        "error",
+    }
+
+
 def upstream_is_quiet(last_event: float, now: float, *, expecting: bool, quiet_s: float) -> bool:
     """True when a reply was expected and the upstream has gone silent."""
     return expecting and now - last_event >= quiet_s
@@ -158,6 +174,7 @@ async def _run_live(
     *,
     io_timeout: float = 10,
     quiet_s: float = 20,
+    silence_after: float = 40,
 ) -> None:
     import websockets
 
@@ -316,7 +333,8 @@ async def _run_live(
                         continue
                     event = json.loads(raw)
                     kind = event.get("type")
-                    note_upstream()
+                    if _resets_upstream_watch(kind):
+                        note_upstream()
                     if kind in {"response.done", "error"}:
                         expecting = False
                     if kind in {"response.output_audio.delta", "input_audio_buffer.speech_started"}:
@@ -364,8 +382,8 @@ async def _run_live(
             async def silence_once() -> None:
                 nonlocal silence_prompted
                 while not silence_prompted:
-                    await asyncio.sleep(5)
-                    if time.monotonic() - last_sound < 40:
+                    await asyncio.sleep(min(1.0, max(0.05, silence_after / 8)))
+                    if time.monotonic() - last_sound < silence_after:
                         continue
                     silence_prompted = True
                     await send_upstream(
@@ -381,7 +399,8 @@ async def _run_live(
                             }
                         )
                     )
-                    return
+                # Stay alive. Returning would look like the call ended.
+                await asyncio.Event().wait()
 
             async def watchdog() -> str:
                 cap_at = time.monotonic() + settings.max_session_seconds
@@ -397,9 +416,12 @@ async def _run_live(
             upstream_task = asyncio.create_task(upstream_to_client())
             silence_task = asyncio.create_task(silence_once())
             watch_task = asyncio.create_task(watchdog())
-            tasks = (client_task, upstream_task, silence_task, watch_task)
+            # The silence prompt must not end the call when it finishes speaking.
+            ending = (client_task, upstream_task, watch_task)
             try:
-                done, _pending = await asyncio.wait(set(tasks), return_when=asyncio.FIRST_COMPLETED)
+                done, _pending = await asyncio.wait(
+                    set(ending), return_when=asyncio.FIRST_COMPLETED
+                )
                 reason = "cap" if watch_task in done and watch_task.result() == "cap" else ""
                 quiet = watch_task in done and watch_task.result() == "quiet"
 
@@ -431,11 +453,11 @@ async def _run_live(
                 # Free the line before waiting on pumps that may still be blocked.
                 release_slot()
                 abort_socket(upstream)
-                for task in tasks:
+                for task in (*ending, silence_task):
                     task.cancel()
                 with contextlib.suppress(Exception):
                     await asyncio.wait_for(
-                        asyncio.gather(*tasks, return_exceptions=True),
+                        asyncio.gather(*ending, silence_task, return_exceptions=True),
                         timeout=2,
                     )
                 with contextlib.suppress(Exception):

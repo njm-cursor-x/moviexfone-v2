@@ -81,6 +81,10 @@ CREATE TABLE IF NOT EXISTS assemble_status (
   movie_id TEXT PRIMARY KEY,
   checked_at TEXT
 );
+CREATE TABLE IF NOT EXISTS film_id (
+  title_key TEXT PRIMARY KEY,
+  tmdb_id TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS voice_session_day (
   host TEXT NOT NULL,
   day TEXT NOT NULL,

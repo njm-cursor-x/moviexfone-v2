@@ -105,6 +105,7 @@ def fetch_assemble_city(
     city_slug: str,
     *,
     client: AllowedClient | None = None,
+    on_retry: Any | None = None,
 ) -> dict[str, Any]:
     if not _TMDB_RE.fullmatch(tmdb_id) or not _CITY_RE.fullmatch(city_slug):
         raise UnsafeURLError("bad assemble path")
@@ -116,6 +117,8 @@ def fetch_assemble_city(
             response = http.get(url, params={"city": city_slug}, max_bytes=2_000_000)
         except httpx.TimeoutException:
             log.info("assemble cold timeout city=%s", city_slug)
+            if on_retry is not None:
+                on_retry()
             time.sleep(30)
             response = http.get(url, params={"city": city_slug}, max_bytes=2_000_000)
         if response.status_code == 429:
@@ -125,6 +128,8 @@ def fetch_assemble_city(
             except ValueError:
                 delay = 5
             log.info("assemble retry-after=%s city=%s", delay, city_slug)
+            if on_retry is not None:
+                on_retry()
             time.sleep(delay)
             response = http.get(url, params={"city": city_slug}, max_bytes=2_000_000)
         if response.status_code != 200:

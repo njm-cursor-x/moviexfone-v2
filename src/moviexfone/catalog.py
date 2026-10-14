@@ -62,12 +62,7 @@ def seed(
     as real listings.
     """
     with db.transaction():
-        saved_ids = [
-            (str(row["title"]), str(row["tmdb_id"]))
-            for row in db.query(
-                "SELECT title, tmdb_id FROM movie WHERE tmdb_id IS NOT NULL AND tmdb_id != ''"
-            )
-        ]
+        remember_film_ids(db)
         if include_showtimes:
             db.execute("DELETE FROM showtime")
         db.execute("DELETE FROM movie_alias")
@@ -76,11 +71,7 @@ def seed(
         db.execute("DELETE FROM theater")
         theater_count = _load_theaters(db, data)
         movie_count = _load_movies(db, data)
-        for title, film_id in saved_ids:
-            db.execute(
-                "UPDATE movie SET tmdb_id = ? WHERE lower(title) = lower(?)",
-                (film_id, title),
-            )
+        restore_film_ids(db)
         if include_showtimes:
             shows = _fixture_shows(data)
             _apply(db, shows["assemble"], mode="insert", now=FIXTURE_FETCHED_AT)
@@ -174,6 +165,42 @@ def _authoritative_source(name: str) -> str:
     if lower.startswith("nitehawk"):
         return "nitehawk_jsonld"
     return "assemble"
+
+
+def _title_key(title: str) -> str:
+    from moviexfone.sources.fetch import normalize_film_query
+
+    cleaned, _year = normalize_film_query(title)
+    return cleaned.lower()
+
+
+def remember_film_ids(db: Database) -> None:
+    """Keep discovered Assemble ids even after the movie rows are rebuilt."""
+    for row in db.query(
+        "SELECT title, tmdb_id FROM movie WHERE tmdb_id IS NOT NULL AND tmdb_id != ''"
+    ):
+        db.execute(
+            "INSERT OR REPLACE INTO film_id (title_key, tmdb_id) VALUES (?, ?)",
+            (_title_key(str(row["title"])), str(row["tmdb_id"])),
+        )
+
+
+def restore_film_ids(db: Database) -> None:
+    known = {
+        str(row["title_key"]): str(row["tmdb_id"])
+        for row in db.query("SELECT title_key, tmdb_id FROM film_id")
+    }
+    if not known:
+        return
+    for movie in db.query("SELECT movie_id, title, tmdb_id FROM movie"):
+        if movie["tmdb_id"]:
+            continue
+        film_id = known.get(_title_key(str(movie["title"])))
+        if film_id:
+            db.execute(
+                "UPDATE movie SET tmdb_id = ? WHERE movie_id = ?",
+                (film_id, movie["movie_id"]),
+            )
 
 
 def _load_movies(db: Database, data: Path) -> int:
@@ -498,6 +525,7 @@ def _ensure_movie(db: Database, title: str) -> str:
         "INSERT OR IGNORE INTO movie_alias (movie_id, alias) VALUES (?, ?)",
         (movie_id, title.lower()),
     )
+    restore_film_ids(db)
     return movie_id
 
 
@@ -616,5 +644,6 @@ def refresh_live(db: Database, *, now: datetime) -> dict[str, object]:
             showtimes=0,
             error=type(exc).__name__,
         )
+    restore_film_ids(db)
     _mark_coverage(db, now)
     return report

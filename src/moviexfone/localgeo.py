@@ -73,6 +73,8 @@ _ABBREV = {
     "pkwy": "parkway",
     "pl": "place",
     "sq": "square",
+    "ctr": "center",
+    "wash": "washington",
 }
 _ORDINAL = re.compile(r"\b(\d+)(?:st|nd|rd|th)\b")
 _LINE_LETTERS = set("ABCDEFGJLMNQRSZ")
@@ -111,14 +113,32 @@ def stations() -> tuple[tuple[str, float, float, str, frozenset[str]], ...]:
     return tuple(found)
 
 
+_SPOKEN = {
+    "Av": "Avenue",
+    "Ave": "Avenue",
+    "St": "Street",
+    "Sq": "Square",
+    "Ctr": "Center",
+    "Blvd": "Boulevard",
+    "Wash": "Washington",
+    "Pkwy": "Parkway",
+    "Rd": "Road",
+    "Pl": "Place",
+}
+_COMPASS = {"W": "West", "E": "East", "N": "North", "S": "South"}
+
+
 def speakable_station(name: str) -> str:
-    text = name.replace("–", "-").replace("—", "-")
-    text = re.sub(r"\bAv\b", "Avenue", text)
-    text = re.sub(r"\bSt\b", "Street", text)
-    text = re.sub(r"\bSq\b", "Square", text)
-    text = re.sub(r"\bCtr\b", "Center", text)
-    text = re.sub(r"\bBlvd\b", "Boulevard", text)
-    return text
+    text = name.replace("–", " ").replace("—", " ").replace("-", " ").replace("/", " ")
+    parts = text.split()
+    spoken: list[str] = []
+    for index, part in enumerate(parts):
+        nxt = parts[index + 1] if index + 1 < len(parts) else ""
+        if part in _COMPASS and nxt[:1].isdigit():
+            spoken.append(_COMPASS[part])
+            continue
+        spoken.append(_SPOKEN.get(part, part))
+    return " ".join(spoken)
 
 
 def _words_and_lines(text: str) -> tuple[tuple[str, ...], frozenset[str]]:

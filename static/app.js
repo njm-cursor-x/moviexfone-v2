@@ -60,8 +60,9 @@ function renderPayload(payload) {
   }
 }
 
-function speak(textToSay) {
-  if (!textToSay || !window.speechSynthesis || mode === "live") return;
+function speak(textToSay, force) {
+  if (!textToSay || !window.speechSynthesis) return;
+  if (mode === "live" && !force) return;
   window.speechSynthesis.cancel();
   const utter = new SpeechSynthesisUtterance(textToSay);
   utter.rate = 1.05;
@@ -212,6 +213,7 @@ async function connect() {
       }
     } else if (msg.type === "notice" || msg.type === "error") {
       addLine("MovieXFone", msg.message || "");
+      speak(msg.message || "", true);
       socket._statusShown = true;
     }
   };

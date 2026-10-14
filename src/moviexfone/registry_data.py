@@ -530,7 +530,7 @@ PLACES: list[PlaceRow] = [
         "Manhattan",
         40.7527,
         -73.9772,
-        0.5,
+        1.0,
         ("grand central",),
     ),
     (
@@ -550,7 +550,7 @@ PLACES: list[PlaceRow] = [
         "Manhattan",
         40.7681,
         -73.9819,
-        0.45,
+        1.0,
         ("columbus circle",),
     ),
     (
@@ -939,7 +939,7 @@ PLACES: list[PlaceRow] = [
         "Brooklyn",
         40.6840,
         -73.9776,
-        0.4,
+        1.0,
         ("atlantic avenue", "barclays station"),
     ),
     (

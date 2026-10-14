@@ -68,6 +68,20 @@ def _starts_with_day(clock: str) -> bool:
     return bool(_DAY_START.match(clock))
 
 
+def spoken_title(title: str) -> str:
+    """Drop a year suffix so the voice does not say "(2026)"."""
+    return re.sub(r"\s*\((?:19|20)\d{2}\)", "", title).strip()
+
+
+def _drop_sentence_period(text: str) -> str:
+    """Remove a sentence period without turning "a.m." into "a.m"."""
+    if re.search(r"[ap]\.m\.$", text):
+        return text
+    if text.endswith("."):
+        return text[:-1]
+    return text
+
+
 def _sentence(text: str) -> str:
     cleaned = text.strip()
     if cleaned.endswith("."):
@@ -100,27 +114,26 @@ def render_speak(
     same_theater = len({card.theater for card in cards}) == 1 and len(cards) > 1
     for index, card in enumerate(cards):
         clock = _clocks(card, max_times, name_days)
+        movie = spoken_title(card.movie)
         fmt = _format_phrase(card.format_norm)
         link = "on" if _starts_with_day(clock) else "at"
         if specific_movie:
             if index == 0:
-                parts.append(
-                    _sentence(f"{when} at {card.theater}, {card.movie}{fmt} {link} {clock}")
-                )
+                parts.append(_sentence(f"{when} at {card.theater}, {movie}{fmt} {link} {clock}"))
             else:
                 parts.append(_sentence(f"At {card.theater}, {clock}"))
         elif same_theater:
             place = "" if name_theater else f" at {card.theater}"
             if index == 0:
-                parts.append(f"{when}{place}: {card.movie}{fmt} {link} {clock}")
+                parts.append(f"{when}{place}: {movie}{fmt} {link} {clock}")
             elif index == len(cards) - 1:
-                parts.append(_sentence(f"and {card.movie}{fmt} {link} {clock}"))
+                parts.append(_sentence(f"and {movie}{fmt} {link} {clock}"))
             else:
-                parts.append(f"{card.movie}{fmt} {link} {clock}")
+                parts.append(f"{movie}{fmt} {link} {clock}")
         elif index == 0:
-            parts.append(_sentence(f"{when}: {card.movie} at {card.theater}{fmt} {link} {clock}"))
+            parts.append(_sentence(f"{when}: {movie} at {card.theater}{fmt} {link} {clock}"))
         else:
-            parts.append(_sentence(f"{card.movie} at {card.theater}{fmt} {link} {clock}"))
+            parts.append(_sentence(f"{movie} at {card.theater}{fmt} {link} {clock}"))
     if same_theater and parts:
         text = " ".join(parts)
         if not text.endswith("."):
@@ -183,7 +196,7 @@ def trim_cards(
         if base.endswith("Want more?"):
             base = base[: -len("Want more?")].rstrip()
             want = " Want more?"
-        base = base.rstrip(".")
+        base = _drop_sentence_period(base)
         with_more = f"{base}, and {hidden} more.{want}"
         if specific_movie or estimate_spoken_seconds(with_more) <= second_budget:
             speak = with_more

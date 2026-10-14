@@ -18,7 +18,7 @@ from moviexfone.db import Database
 from moviexfone.http import AllowedClient
 from moviexfone.sources.fetch import ALL_CITIES, fetch_assemble_city, lookup_film_id
 from moviexfone.sources.fetch import _client as assemble_client
-from moviexfone.sources.parse import parse_assemble
+from moviexfone.sources.parse import IncomingShow, parse_assemble
 from moviexfone.timeutil import NY
 
 log = logging.getLogger(__name__)
@@ -114,24 +114,29 @@ def refresh_assemble(
                     "UPDATE movie SET tmdb_id = ? WHERE movie_id = ?",
                     (film_id, movie_id),
                 )
-            cleared = False
+                from moviexfone.catalog import remember_film_ids
+
+                remember_film_ids(db)
+            collected: list[IncomingShow] = []
             for slug in ALL_CITIES:
                 limiter.wait()
                 try:
-                    payload = fetch_assemble_city(film_id, slug, client=client)
+                    payload = fetch_assemble_city(
+                        film_id, slug, client=client, on_retry=limiter.wait
+                    )
                 except Exception as exc:
                     errors.append(type(exc).__name__)
                     log.warning("assemble refresh failed: %s", type(exc).__name__)
                     continue
-                rows = parse_assemble(payload, title=title)
-                if rows and not cleared:
+                collected.extend(parse_assemble(payload, title=title))
+            with db.transaction():
+                if collected:
                     db.execute(
                         "DELETE FROM showtime WHERE source = 'assemble' AND movie_id = ?",
                         (movie_id,),
                     )
-                    cleared = True
-                total += _apply(db, rows, mode="insert", now=now)
-                fetched = True
+                total += _apply(db, collected, mode="insert", now=now)
+            fetched = True
             db.execute(
                 "INSERT OR REPLACE INTO assemble_status (movie_id, checked_at) VALUES (?, ?)",
                 (movie_id, started.isoformat()),

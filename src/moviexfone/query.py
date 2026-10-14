@@ -534,9 +534,10 @@ def _nothing_listed(
                 "ticket_url": nearest.ticket_url,
             }
             day = nearest.starts_at.astimezone(NY).strftime("%A")
-            speak = (
+            speak = _clock_sentence(
                 f"{speak} The closest listing I have is {nearest.movie} at {nearest.theater} "
-                f"on {day} at {spoken_time(nearest.local_t)}."
+                f"on {day} at",
+                spoken_time(nearest.local_t),
             )
     return {
         "resolved_location": _resolved_json(resolution),
@@ -664,6 +665,13 @@ def _alternative(
     }
 
 
+def _clock_sentence(prefix: str, clock: str) -> str:
+    text = f"{prefix} {clock}".rstrip()
+    if text.endswith("."):
+        return text
+    return f"{text}."
+
+
 def _title_not_fetched(db: Database, movie_id: str) -> bool:
     """True until Assemble has finished a pass for this title.
 
@@ -702,8 +710,10 @@ def _later_tonight(
     if not upcoming:
         return None
     first = min(upcoming, key=lambda row: row.starts_at)
-    clock = spoken_time(first.local_t).rstrip(".")
-    speak = f"Nothing else tonight. Tomorrow the first show is {first.movie} at {clock}."
+    speak = _clock_sentence(
+        f"Nothing else tonight. Tomorrow the first show is {first.movie} at",
+        spoken_time(first.local_t),
+    )
     return {
         "resolved_location": _resolved_json(resolution),
         "date_spoken": date_spoken,

@@ -272,7 +272,7 @@ def _local_place(query: str) -> Resolution | None:
         label=str(hit["label"]),
         lat=lat,
         lng=lng,
-        radius_mi=0.6,
+        radius_mi=1.0,
         borough=str(hit["borough"]) if hit.get("borough") else None,
     )
 
