@@ -124,6 +124,7 @@ def search_showtimes(
         ]
 
     matched = _matched(resolution)
+    widened = False
     if (
         not matched
         and resolution.kind == "place"
@@ -131,6 +132,7 @@ def search_showtimes(
     ):
         resolution = replace(resolution, radius_mi=2.0)
         matched = _matched(resolution)
+        widened = True
     if format_name not in {"", "any"} and not matched:
         return _format_gap(db, resolution, format_name, date_spoken, dates)
 
@@ -196,6 +198,8 @@ def search_showtimes(
         )
         if started and int(started["n"]) > 0 and pending and int(pending["n"]) > 0:
             speak = f"{speak} I only have live times for some titles.".strip()
+    if widened and chosen:
+        speak = _mark_widened(speak, resolution.label, chosen)
     payload = _payload(resolution, date_spoken, chosen, more, speak, oldest)
     if not chosen:
         payload["note"] = "No further listings. Do not search again."
@@ -745,6 +749,46 @@ def _other_day(
     }
 
 
+def _farther_words(miles: float) -> str:
+    if miles <= 1.2:
+        return "about a mile away"
+    if miles <= 1.7:
+        return "about a mile and a half away"
+    return "about two miles away"
+
+
+def _where_words(row: _Row, resolution: Resolution) -> str:
+    miles = _distance(row, resolution)
+    if miles is not None and miles > 1:
+        return f"at {row.theater}, {_farther_words(miles)}"
+    return f"at {row.theater}"
+
+
+def _with_farther(speak: str, row: _Row, resolution: Resolution) -> str:
+    miles = _distance(row, resolution)
+    if miles is None or miles <= 1:
+        return speak
+    extra = _farther_words(miles)
+    if speak.endswith("."):
+        return speak[:-1] + f", {extra}."
+    return f"{speak}, {extra}."
+
+
+def _mark_widened(speak: str, label: str, cards: list[ShowCard]) -> str:
+    miles = [
+        card.distance_mi for card in cards if card.distance_mi is not None and card.distance_mi > 1
+    ]
+    if not miles:
+        return speak
+    away = _farther_words(min(miles))
+    needle = f" near {label}"
+    if needle in speak:
+        return speak.replace(needle, f", a bit farther from {label}, {away}", 1)
+    if speak.endswith("."):
+        return speak[:-1] + f", a bit farther, {away}."
+    return f"{speak}, a bit farther, {away}."
+
+
 def _clock_sentence(prefix: str, clock: str) -> str:
     text = f"{prefix} {clock}".rstrip()
     if text.endswith("."):
@@ -779,8 +823,12 @@ def _later_tonight(
         return None
     spoken = date_spoken.lower()
     named_tonight = "tonight" in spoken
-    # A late ask with no date still means tonight. tonight_after sets the floor to now.
-    evening_today = spoken == "today" and after is not None and after >= time(17, 0)
+    local = now.astimezone(NY).time()
+    # No date and no useful evening floor: 10 PM through the 3 AM cinema rollover.
+    late_clock = local >= time(22, 0) or local < time(3, 0)
+    evening_today = spoken == "today" and (
+        (after is not None and after >= time(17, 0)) or late_clock
+    )
     if not named_tonight and not evening_today:
         return None
     tomorrow = (business_date(now) + timedelta(days=1)).isoformat()
@@ -809,16 +857,19 @@ def _later_tonight(
             f"Nothing else tonight. Tomorrow the first show is {spoken_title(first.movie)} at",
             spoken_time(first.local_t),
         )
+        speak = _with_farther(speak, first, resolution)
     else:
         bits = [
-            f"{spoken_title(row.movie)} at {spoken_time(row.local_t)} at {row.theater}"
+            f"{spoken_title(row.movie)} at {spoken_time(row.local_t)} {_where_words(row, resolution)}"
             for row in picks
         ]
         if len(bits) == 2:
             listed = f"{bits[0]} and {bits[1]}"
         else:
             listed = ", ".join(bits[:-1]) + f", and {bits[-1]}"
-        speak = f"Nothing else tonight. Tomorrow the first shows nearby are {listed}."
+        farther = any((_distance(row, resolution) or 0) > 1 for row in picks)
+        lead = "first shows are" if farther else "first shows nearby are"
+        speak = f"Nothing else tonight. Tomorrow the {lead} {listed}."
         first = picks[0]
     return {
         "resolved_location": _resolved_json(resolution),

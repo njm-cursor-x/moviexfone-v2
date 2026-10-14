@@ -51,6 +51,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(app: FastAPI) -> Any:
         db = Database(settings.db_path)
         seed(db, settings.data_dir, now=now_ny(), include_showtimes=not settings.live_data)
+        from moviexfone.sources.refresh import GLOBAL_BUDGET
+
+        GLOBAL_BUDGET.attach(db)
         refresher: AssembleRefresher | None = None
         first_party: FirstPartyRefresher | None = None
         if settings.live_data:

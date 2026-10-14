@@ -55,7 +55,7 @@ Round 7 on this bridge, with live xAI voice and live data:
 ## Limits
 
 - **AMC and Regal times come from Assemble's showtimes API.** That is fine for an internal demo. The sourcing is not disclosed to callers and is not cleared for public or branded use. The Alamo feed is also undocumented. Do not make this public without asking.
-- **Single process only.** The Assemble rate limiter lives inside the process (50 requests a minute). Run one `python -m moviexfone`, or one uvicorn or Docker worker. Two processes can exceed Assemble's limit together.
+- **Single process only.** Assemble is capped at 50 requests a minute. Those request times are stored in SQLite and loaded again on startup, so a restart inside the same minute does not open a second window of 50. Run one `python -m moviexfone`, or one uvicorn or Docker worker. Two processes can still exceed the limit together.
 - Repertory houses get a coverage note instead of times. Some titles have no Assemble film id; Alamo and Nitehawk still cover the ones they publish.
 - No runtimes. Ratings and one-line blurbs come from bundled data only.
 - One live call at a time. Real phone numbers are only via Builder, and that is billed.

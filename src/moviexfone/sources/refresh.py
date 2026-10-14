@@ -29,21 +29,45 @@ _LOOKUP_MISS: dict[str, float] = {}
 
 
 class RequestBudget:
-    """A sliding window that refuses to exceed the Assemble rate limit."""
+    """A sliding window that refuses to exceed the Assemble rate limit.
+
+    Stamps are wall-clock seconds. When a database is attached, they are reloaded
+    at startup so a restart inside the same minute does not open a new window.
+    """
 
     def __init__(self, limit: int = _MAX_PER_MINUTE, window: float = 60.0) -> None:
         self.limit = limit
         self.window = window
         self._stamps: list[float] = []
         self._lock = threading.Lock()
+        self._db: Database | None = None
+
+    def attach(self, db: Database) -> None:
+        with self._lock:
+            self._db = db
+            now = time.time()
+            rows = db.query(
+                "SELECT sent_at FROM assemble_budget WHERE sent_at >= ? ORDER BY sent_at",
+                (now - self.window,),
+            )
+            self._stamps = [float(row["sent_at"]) for row in rows]
 
     def wait(self) -> None:
         while True:
             with self._lock:
-                now = time.monotonic()
+                now = time.time()
                 self._stamps = [stamp for stamp in self._stamps if now - stamp < self.window]
                 if len(self._stamps) < self.limit:
                     self._stamps.append(now)
+                    if self._db is not None:
+                        self._db.execute(
+                            "INSERT INTO assemble_budget (sent_at) VALUES (?)",
+                            (now,),
+                        )
+                        self._db.execute(
+                            "DELETE FROM assemble_budget WHERE sent_at < ?",
+                            (now - self.window,),
+                        )
                     return
                 delay = self.window - (now - self._stamps[0])
             time.sleep(max(0.05, delay))

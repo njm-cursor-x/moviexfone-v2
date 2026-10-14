@@ -89,6 +89,11 @@ CREATE TABLE IF NOT EXISTS film_lookup_miss (
   title_key TEXT PRIMARY KEY,
   missed_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS assemble_budget (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  sent_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_assemble_budget_sent ON assemble_budget (sent_at);
 CREATE TABLE IF NOT EXISTS voice_session_day (
   host TEXT NOT NULL,
   day TEXT NOT NULL,
