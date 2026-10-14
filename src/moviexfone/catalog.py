@@ -6,7 +6,7 @@ import csv
 import json
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from moviexfone.db import Database
@@ -172,6 +172,27 @@ def _title_key(title: str) -> str:
 
     cleaned, _year = normalize_film_query(title)
     return cleaned.lower()
+
+
+def film_lookup_blocked(db: Database, title: str, now: datetime) -> bool:
+    """True when a recent Assemble search found no film id for this title."""
+    row = db.query_one(
+        "SELECT missed_at FROM film_lookup_miss WHERE title_key = ?",
+        (_title_key(title),),
+    )
+    if row is None:
+        return False
+    missed = datetime.fromisoformat(str(row["missed_at"]))
+    if missed.tzinfo is None:
+        missed = missed.replace(tzinfo=now.tzinfo)
+    return now - missed < timedelta(hours=6)
+
+
+def remember_film_miss(db: Database, title: str, now: datetime) -> None:
+    db.execute(
+        "INSERT OR REPLACE INTO film_lookup_miss (title_key, missed_at) VALUES (?, ?)",
+        (_title_key(title), now.isoformat()),
+    )
 
 
 def remember_film_ids(db: Database) -> None:

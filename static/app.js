@@ -211,6 +211,9 @@ async function connect() {
         addLine("MovieXFone", assistant);
         assistant = "";
       }
+    } else if (msg.type === "goodbye") {
+      addLine("MovieXFone", msg.text || "Enjoy the show.");
+      speak(msg.text || "Enjoy the show.", true);
     } else if (msg.type === "notice" || msg.type === "error") {
       addLine("MovieXFone", msg.message || "");
       speak(msg.message || "", true);

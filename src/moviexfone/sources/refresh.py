@@ -2,7 +2,8 @@
 
 The public API allows about 60 requests a minute and caches a city for about
 15 minutes. This worker stays under that ceiling and only asks again when the
-cache is stale.
+cache is stale. The bucket is per process: run one process, or one uvicorn
+worker. Several workers each keep their own bucket.
 """
 
 from __future__ import annotations
@@ -97,17 +98,26 @@ def refresh_assemble(
                 continue
             film_id = str(movie["tmdb_id"] or "")
             if not film_id:
+                from moviexfone.catalog import film_lookup_blocked, remember_film_miss
+
+                if film_lookup_blocked(db, title, now):
+                    continue
                 missed_at = _LOOKUP_MISS.get(movie_id)
                 if missed_at is not None and time.monotonic() - missed_at < 900:
                     continue
                 limiter.wait()
+                failed = False
                 try:
                     found = lookup_film_id(title, client=client)
                 except Exception as exc:
                     errors.append(type(exc).__name__)
                     found = None
+                    failed = True
                 if not found:
-                    _LOOKUP_MISS[movie_id] = time.monotonic()
+                    if failed:
+                        _LOOKUP_MISS[movie_id] = time.monotonic()
+                    else:
+                        remember_film_miss(db, title, now)
                     continue
                 film_id = found
                 db.execute(

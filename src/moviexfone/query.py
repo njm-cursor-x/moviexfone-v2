@@ -12,7 +12,7 @@ from moviexfone.geo import borough_of, haversine_miles
 from moviexfone.locations import PlaceRef, Resolution, TheaterRef, resolve_location
 from moviexfone.nlu import tonight_after
 from moviexfone.sanitize import sanitize_display
-from moviexfone.shaping import ShowCard, trim_cards
+from moviexfone.shaping import ShowCard, spoken_title, trim_cards
 from moviexfone.timeutil import (
     NY,
     business_date,
@@ -124,7 +124,7 @@ def search_showtimes(
         return _format_gap(db, resolution, format_name, date_spoken, dates)
 
     if not matched:
-        later = _later_tonight(rows, resolution, movie_id, date_spoken, now)
+        later = _later_tonight(rows, resolution, movie_id, date_spoken, now, after)
         if later is not None:
             return later
         if movie_id is None:
@@ -583,7 +583,7 @@ def _alternative(
         elsewhere = True
     if not pool:
         if _title_not_fetched(db, movie_id):
-            speak = f"I don't have times for {movie_title} at {resolution.label} yet."
+            speak = f"I don't have times for {spoken_title(movie_title)} at {resolution.label} yet."
         else:
             speak = f"No screenings listed for {movie_title}. Want another movie or neighborhood?"
         return {
@@ -633,7 +633,7 @@ def _alternative(
         where = resolution.label
         if _title_not_fetched(db, movie_id):
             speak = (
-                f"I don't have times for {movie_title} at {where} yet. "
+                f"I don't have times for {spoken_title(movie_title)} at {where} yet. "
                 f"The closest I already have is {clock} at {only.theater}."
             )
         else:
@@ -691,13 +691,28 @@ def _later_tonight(
     movie_id: str | None,
     date_spoken: str,
     now: datetime,
+    after: time | None = None,
 ) -> dict[str, Any] | None:
     if resolution.kind == "theater" and not resolution.covered:
         return None
     if resolution.kind not in {"theater", "place"}:
         return None
-    if "tonight" not in date_spoken.lower():
+    spoken = date_spoken.lower()
+    named_tonight = "tonight" in spoken
+    evening_today = spoken == "today" and after is not None and after >= time(17, 0)
+    if not named_tonight and not evening_today:
         return None
+    if evening_today:
+        today = business_date(now).isoformat()
+        had_show = any(
+            row.business_date == today
+            and row.starts_at < now
+            and (movie_id is None or row.movie_id == movie_id)
+            and _in_resolution(row, resolution)
+            for row in rows
+        )
+        if not had_show:
+            return None
     tomorrow = (business_date(now) + timedelta(days=1)).isoformat()
     upcoming = [
         row
@@ -711,7 +726,7 @@ def _later_tonight(
         return None
     first = min(upcoming, key=lambda row: row.starts_at)
     speak = _clock_sentence(
-        f"Nothing else tonight. Tomorrow the first show is {first.movie} at",
+        f"Nothing else tonight. Tomorrow the first show is {spoken_title(first.movie)} at",
         spoken_time(first.local_t),
     )
     return {

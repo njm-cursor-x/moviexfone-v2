@@ -41,9 +41,43 @@ class TitleHit:
     score: float
 
 
+_ROMAN = {
+    "i": "1",
+    "ii": "2",
+    "iii": "3",
+    "iv": "4",
+    "v": "5",
+    "vi": "6",
+    "vii": "7",
+    "viii": "8",
+    "ix": "9",
+    "x": "10",
+}
+
+
+def sequel_mark(text: str) -> str | None:
+    """Trailing number or roman numeral. '2' and 'II' are the same sequel."""
+    parts = normalize_title(text).split()
+    if not parts:
+        return None
+    last = parts[-1]
+    if last.isdigit():
+        return str(int(last))
+    return _ROMAN.get(last)
+
+
+def _stem(text: str) -> str:
+    parts = normalize_title(text).split()
+    if parts and sequel_mark(text) is not None:
+        parts = parts[:-1]
+    return " ".join(parts)
+
+
 def score_title(query: str, candidate: str) -> float:
-    left = normalize_title(query)
-    right = normalize_title(candidate)
+    if sequel_mark(query) != sequel_mark(candidate):
+        return 0.0
+    left = _stem(query)
+    right = _stem(candidate)
     if not left or not right:
         return 0.0
     if left == right:

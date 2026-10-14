@@ -128,6 +128,71 @@ _SPOKEN = {
 _COMPASS = {"W": "West", "E": "East", "N": "North", "S": "South"}
 
 
+_ORDINAL_ONES = (
+    "",
+    "first",
+    "second",
+    "third",
+    "fourth",
+    "fifth",
+    "sixth",
+    "seventh",
+    "eighth",
+    "ninth",
+    "tenth",
+    "eleventh",
+    "twelfth",
+    "thirteenth",
+    "fourteenth",
+    "fifteenth",
+    "sixteenth",
+    "seventeenth",
+    "eighteenth",
+    "nineteenth",
+)
+_ORDINAL_TENS = (
+    "",
+    "",
+    "twenty",
+    "thirty",
+    "forty",
+    "fifty",
+    "sixty",
+    "seventy",
+    "eighty",
+    "ninety",
+)
+_ORDINAL_TEN_EXACT = {
+    20: "twentieth",
+    30: "thirtieth",
+    40: "fortieth",
+    50: "fiftieth",
+    60: "sixtieth",
+    70: "seventieth",
+    80: "eightieth",
+    90: "ninetieth",
+}
+
+
+def _ordinal_word(number: int) -> str:
+    if number <= 0 or number >= 1000:
+        return str(number)
+    if number < 20:
+        word = _ORDINAL_ONES[number]
+    elif number in _ORDINAL_TEN_EXACT:
+        word = _ORDINAL_TEN_EXACT[number]
+    elif number < 100:
+        word = f"{_ORDINAL_TENS[number // 10]}-{_ORDINAL_ONES[number % 10]}"
+    else:
+        hundreds = ("", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine")
+        rest = number % 100
+        head = f"{hundreds[number // 100]} hundred"
+        word = head if rest == 0 else f"{head} {_ordinal_word(rest)}"
+        if rest == 0:
+            word = f"{head}th"
+    return word[:1].upper() + word[1:]
+
+
 def speakable_station(name: str) -> str:
     text = name.replace("–", " ").replace("—", " ").replace("-", " ").replace("/", " ")
     parts = text.split()
@@ -136,6 +201,9 @@ def speakable_station(name: str) -> str:
         nxt = parts[index + 1] if index + 1 < len(parts) else ""
         if part in _COMPASS and nxt[:1].isdigit():
             spoken.append(_COMPASS[part])
+            continue
+        if part.isdigit():
+            spoken.append(_ordinal_word(int(part)))
             continue
         spoken.append(_SPOKEN.get(part, part))
     return " ".join(spoken)

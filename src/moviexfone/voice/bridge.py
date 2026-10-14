@@ -144,9 +144,39 @@ def _resets_upstream_watch(kind: str | None) -> bool:
         "response.function_call_arguments.done",
         "input_audio_buffer.speech_started",
         "input_audio_buffer.speech_stopped",
+        "input_audio_buffer.committed",
         "conversation.item.input_audio_transcription.completed",
         "error",
     }
+
+
+def _force_message(text: str) -> dict[str, Any]:
+    return {
+        "type": "conversation.item.create",
+        "item": {
+            "type": "force_message",
+            "role": "assistant",
+            "interruptible": True,
+            "content": [{"type": "output_text", "text": text}],
+        },
+    }
+
+
+def _expects_reply(item: dict[str, Any]) -> bool:
+    if item.get("type") == "response.create":
+        return True
+    output = item.get("item")
+    return isinstance(output, dict) and output.get("type") == "function_call_output"
+
+
+def _is_goodbye(item: dict[str, Any]) -> bool:
+    output = item.get("item")
+    if not isinstance(output, dict) or output.get("type") != "force_message":
+        return False
+    content = output.get("content")
+    if not isinstance(content, list):
+        return False
+    return any(isinstance(part, dict) and part.get("text") == "Enjoy the show." for part in content)
 
 
 def upstream_is_quiet(last_event: float, now: float, *, expecting: bool, quiet_s: float) -> bool:
@@ -253,6 +283,7 @@ async def _run_live(
             last_upstream = time.monotonic()
             silence_prompted = False
             expecting = False
+            goodbye_fallback: asyncio.Task[None] | None = None
 
             def note_speech() -> None:
                 """Mic frames arrive continuously. Only real speech resets the prompt."""
@@ -294,7 +325,6 @@ async def _run_live(
                             )
                             await websocket.close(code=1000)
                             return
-                        expecting = True
                         await send_upstream(
                             json.dumps(
                                 {
@@ -327,7 +357,7 @@ async def _run_live(
                         return
 
             async def upstream_to_client() -> None:
-                nonlocal expecting
+                nonlocal expecting, goodbye_fallback
                 async for raw in upstream:
                     if isinstance(raw, bytes):
                         continue
@@ -335,6 +365,11 @@ async def _run_live(
                     kind = event.get("type")
                     if _resets_upstream_watch(kind):
                         note_upstream()
+                    if kind in {
+                        "input_audio_buffer.speech_stopped",
+                        "input_audio_buffer.committed",
+                    }:
+                        expecting = True
                     if kind in {"response.done", "error"}:
                         expecting = False
                     if kind in {"response.output_audio.delta", "input_audio_buffer.speech_started"}:
@@ -363,10 +398,34 @@ async def _run_live(
                     outbound = await loop.handle_server_event(event)
                     for item in outbound:
                         if item.get("type") == "call.end":
+                            if goodbye_fallback is not None:
+                                goodbye_fallback.cancel()
                             await websocket.send_json({"type": "call.ended"})
                             await websocket.close(code=1000)
                             return
                         await send_upstream(json.dumps(item))
+                        if _expects_reply(item):
+                            expecting = True
+                            note_upstream()
+                        if _is_goodbye(item):
+                            await websocket.send_json(
+                                {
+                                    "type": "transcript",
+                                    "role": "assistant",
+                                    "text": "Enjoy the show.",
+                                }
+                            )
+
+                            async def speak_if_still_open() -> None:
+                                await asyncio.sleep(4)
+                                with contextlib.suppress(Exception):
+                                    await websocket.send_json(
+                                        {"type": "goodbye", "text": "Enjoy the show."}
+                                    )
+                                    await websocket.close(code=1000)
+
+                            if goodbye_fallback is None:
+                                goodbye_fallback = asyncio.create_task(speak_if_still_open())
                         output = item.get("item")
                         if (
                             isinstance(output, dict)
@@ -404,13 +463,28 @@ async def _run_live(
 
             async def watchdog() -> str:
                 cap_at = time.monotonic() + settings.max_session_seconds
+                nudged = False
                 while True:
                     await asyncio.sleep(min(1.0, quiet_s))
                     now = time.monotonic()
                     if now >= cap_at:
                         return "cap"
-                    if upstream_is_quiet(last_upstream, now, expecting=expecting, quiet_s=quiet_s):
-                        return "quiet"
+                    if not upstream_is_quiet(
+                        last_upstream, now, expecting=expecting, quiet_s=quiet_s
+                    ):
+                        continue
+                    # Committed noise can get no reply. Ask once, then end on a second stall.
+                    if not nudged:
+                        nudged = True
+                        note_upstream()
+                        try:
+                            await send_upstream(
+                                json.dumps(_force_message("Sorry, I didn't catch that"))
+                            )
+                        except Exception:
+                            return "quiet"
+                        continue
+                    return "quiet"
 
             client_task = asyncio.create_task(client_to_upstream())
             upstream_task = asyncio.create_task(upstream_to_client())
@@ -453,6 +527,8 @@ async def _run_live(
                 # Free the line before waiting on pumps that may still be blocked.
                 release_slot()
                 abort_socket(upstream)
+                if goodbye_fallback is not None:
+                    goodbye_fallback.cancel()
                 for task in (*ending, silence_task):
                     task.cancel()
                 with contextlib.suppress(Exception):

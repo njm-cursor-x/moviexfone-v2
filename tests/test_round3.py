@@ -135,10 +135,13 @@ def test_silence_does_not_hang_up() -> None:
             }
         )
         goodbye = await loop.handle_server_event({"type": "response.done"})
-        return [*kinds, *[str(item.get("type")) for item in goodbye]]
+        spoken = json.dumps(goodbye)
+        closed = await loop.handle_server_event({"type": "response.done"})
+        return [*kinds, spoken, *[str(item.get("type")) for item in closed]]
 
     kinds = asyncio.run(run())
     assert "call.end" not in kinds[:-1]
+    assert "Enjoy the show." in kinds[-2]
     assert kinds[-1] == "call.end"
 
 

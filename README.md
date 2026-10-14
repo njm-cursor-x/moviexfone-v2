@@ -140,5 +140,6 @@ The eval is `pytest tests/test_eval.py`: 20 scripted caller questions against th
 - Venue coordinates in the registry are approximate, good to about a block. Neighborhoods and landmarks are a local gazetteer; NYC Planning Labs GeoSearch is only the fallback, and it is skipped for names we already know so "Park Slope" does not become the Armory.
 - The bundled showtimes are illustrative, dated 2026-10-13, and are for the offline demo and the tests. Live mode never serves them. Turn on `MOVIEXFONE_LIVE_DATA` on a machine that can reach the feeds. Assemble looks up a film id from its own search when `movies.json` has none.
 - The lockfile is for CPython 3.12. Start with `python -m moviexfone`. If you launch uvicorn yourself, set `MOVIEXFONE_BIND` to the same host as `--host`, because the startup check reads that variable.
+- The Assemble rate limit is per process. This demo keeps one 50-request bucket inside the process. Run a single process, or a single worker if you start uvicorn or Docker yourself. Two workers each have their own bucket and can exceed Assemble's limit together. `python -m moviexfone` and the Dockerfile both start one process.
 - Live xAI audio was not run in this workspace. There is no key here. The tool loop is tested with a fake session.
 - This is a local demo. It is not a public phone line, and it should not be branded as one.

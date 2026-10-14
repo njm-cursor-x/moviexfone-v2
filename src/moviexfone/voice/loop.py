@@ -54,6 +54,7 @@ class ToolLoop:
         self._response_active = False
         self._last_user = ""
         self._silence_prompted = False
+        self._goodbye_pending = False
 
     async def handle_server_event(self, event: dict[str, Any]) -> list[dict[str, Any]]:
         kind = event.get("type")
@@ -104,6 +105,9 @@ class ToolLoop:
             return []
         if kind == "response.done":
             self._response_active = False
+            if self._goodbye_pending:
+                self._goodbye_pending = False
+                return [{"type": "call.end"}]
             if not self._pending:
                 self._audio_bytes = 0
                 self.rounds = 0
@@ -135,7 +139,8 @@ class ToolLoop:
         names = [name for _call_id, name, _args in batch]
         if "end_call" in names:
             if _GOODBYE.search(self._last_user):
-                messages.append({"type": "call.end"})
+                self._goodbye_pending = True
+                messages.append(_force("Enjoy the show."))
                 return messages
             if not self._silence_prompted and not had_audio:
                 self._silence_prompted = True

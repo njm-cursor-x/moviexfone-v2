@@ -124,7 +124,7 @@ def test_barclays_columbus_and_grand_central(db: Database) -> None:
     central = resolve_location("Grand Central", theaters, places)
     assert circle.radius_mi is not None and circle.radius_mi >= 1.0
     assert central.radius_mi is not None and central.radius_mi >= 1.0
-    assert speakable_station("W 4 St-Wash Sq") == "West 4 Street Washington Square"
+    assert speakable_station("W 4 St-Wash Sq") == "West Fourth Street Washington Square"
 
 
 def test_film_ids_survive_a_live_reseed(tmp_path: object) -> None:

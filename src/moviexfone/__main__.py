@@ -11,6 +11,7 @@ from moviexfone.config import Settings
 def main() -> None:
     settings = Settings.from_env()
     enforce_deployment(settings)
+    # One process. The Assemble rate bucket is not shared across workers.
     uvicorn.run(
         "moviexfone.api.app:create_app",
         factory=True,

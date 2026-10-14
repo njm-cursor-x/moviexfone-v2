@@ -85,6 +85,10 @@ CREATE TABLE IF NOT EXISTS film_id (
   title_key TEXT PRIMARY KEY,
   tmdb_id TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS film_lookup_miss (
+  title_key TEXT PRIMARY KEY,
+  missed_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS voice_session_day (
   host TEXT NOT NULL,
   day TEXT NOT NULL,
