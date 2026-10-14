@@ -260,6 +260,7 @@ def _apply(db: Database, rows: list[IncomingShow], *, mode: str, now: datetime) 
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         payload,
     )
+    _mark_coverage(db, now)
     return len(payload)
 
 
@@ -304,6 +305,7 @@ class _ResolvedShow:
             log.info("unmatched venue %s", row.theater_key)
             return None
         movie_id = _ensure_movie(db, row.movie_title)
+        _fill_movie_facts(db, movie_id, row.rating, row.synopsis)
         return _ResolvedShow(
             theater_id,
             movie_id,
@@ -373,12 +375,20 @@ def record_ingest(
     ok: bool,
     showtimes: int,
     error: str | None,
+    started: datetime | None = None,
+    finished: datetime | None = None,
 ) -> None:
-    stamp = iso_ny(now)
     db.execute(
         """INSERT INTO ingest_run (source, started_at, finished_at, ok, theaters, showtimes, error)
            VALUES (?, ?, ?, ?, 0, ?, ?)""",
-        (source, stamp, stamp, 1 if ok else 0, showtimes, error),
+        (
+            source,
+            iso_ny(started or now),
+            iso_ny(finished or now),
+            1 if ok else 0,
+            showtimes,
+            error,
+        ),
     )
 
 
@@ -450,6 +460,23 @@ def _ensure_movie(db: Database, title: str) -> str:
         (movie_id, title.lower()),
     )
     return movie_id
+
+
+def _fill_movie_facts(
+    db: Database, movie_id: str, rating: str | None, synopsis: str | None
+) -> None:
+    if rating:
+        db.execute(
+            """UPDATE movie SET rating = ?
+               WHERE movie_id = ? AND (rating IS NULL OR rating = '')""",
+            (rating, movie_id),
+        )
+    if synopsis:
+        db.execute(
+            """UPDATE movie SET synopsis_short = ?
+               WHERE movie_id = ? AND (synopsis_short IS NULL OR synopsis_short = '')""",
+            (synopsis, movie_id),
+        )
 
 
 def _mark_coverage(db: Database, now: datetime) -> None:

@@ -117,15 +117,15 @@ def test_past_showtimes_are_dropped(db: Database) -> None:
 
 
 def test_tomorrow_night_and_next_weekday() -> None:
-    dates, spoken, unclear = resolve_when("tomorrow night", NOW)
-    assert dates == ["2026-10-14"]
-    assert spoken == "tomorrow"
-    assert unclear is False
-    nxt, _label, unclear = resolve_when("next Tuesday", NOW)
-    assert nxt == ["2026-10-20"]
-    assert unclear is False
-    _dates, _spoken, unclear = resolve_when("someday soon", NOW)
-    assert unclear is True
+    night = resolve_when("tomorrow night", NOW)
+    assert list(night.dates) == ["2026-10-14"]
+    assert night.spoken == "tomorrow night"
+    assert night.unclear is False
+    nxt = resolve_when("next Tuesday", NOW)
+    assert list(nxt.dates) == ["2026-10-20"]
+    assert nxt.unclear is False
+    someday = resolve_when("someday soon", NOW)
+    assert someday.unclear is True
 
 
 def test_after_midnight_tonight_keeps_the_late_show(db: Database) -> None:
@@ -282,7 +282,7 @@ def test_zip_geocode_is_used(db: Database) -> None:
         date_spoken="today",
         geocode=geocode,
     )
-    assert result["resolved_location"]["label"] == "11211"
+    assert result["resolved_location"]["label"] == "Williamsburg"
 
 
 def test_one_theater_borough_lists_more_than_one_movie(db: Database) -> None:
@@ -339,7 +339,8 @@ def test_assemble_cache_skips_a_fresh_film(tmp_path: Path) -> None:
     client = AllowedClient({"api.assemble.film"}, transport=httpx.MockTransport(handler))
     count = refresh_assemble(db, now=NOW, budget=RequestBudget(), client=client)
     assert count >= 1
-    assert len(calls) == len(ALL_CITIES)
+    screenings = [url for url in calls if "/screenings" in url]
+    assert len(screenings) == len(ALL_CITIES)
     assert assemble_is_fresh(db, "movie:verity", now=NOW)
     before = len(calls)
     assert refresh_assemble(db, now=NOW, budget=RequestBudget(), client=client) == 0

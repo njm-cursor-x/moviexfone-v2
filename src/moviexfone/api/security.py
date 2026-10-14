@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import os
+import secrets
 import threading
 import time
 from collections import deque
@@ -112,6 +113,55 @@ def origin_allowed(origin: str | None, allowed: tuple[str, ...]) -> bool:
     return origin.rstrip("/") in {item.rstrip("/") for item in allowed}
 
 
+class VoiceTickets:
+    """Single-use, short-lived websocket tickets. The long-lived secret never goes in a URL."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._open: dict[str, float] = {}
+
+    def issue(self, ttl: float = 60.0) -> str:
+        nonce = secrets.token_urlsafe(24)
+        with self._lock:
+            self._drop()
+            self._open[nonce] = time.monotonic() + ttl
+        return nonce
+
+    def consume(self, nonce: str | None) -> bool:
+        if not nonce:
+            return False
+        with self._lock:
+            self._drop()
+            expiry = self._open.pop(nonce, None)
+        return expiry is not None
+
+    def _drop(self) -> None:
+        moment = time.monotonic()
+        for key in [item for item, expiry in self._open.items() if expiry < moment]:
+            del self._open[key]
+
+
+def _test_origin(host: str | None, origin: str | None) -> bool:
+    return (host or "") == "testclient" and (
+        origin is not None and origin.startswith("http://testserver")
+    )
+
+
+def ticket_allowed(
+    *,
+    origin: str | None,
+    host: str | None,
+    header_secret: str | None,
+    allowed_origins: tuple[str, ...],
+    secret: str | None,
+) -> bool:
+    if origin and (origin_allowed(origin, allowed_origins) or _test_origin(host, origin)):
+        return True
+    if secret and header_secret and secrets_equal(header_secret, secret):
+        return True
+    return not origin and (host or "") in local_hosts() and not secret
+
+
 def voice_connection_allowed(
     *,
     origin: str | None,
@@ -120,21 +170,17 @@ def voice_connection_allowed(
     allowed_origins: tuple[str, ...],
     secret: str | None,
     live: bool = False,
-) -> bool:
-    """Reject a foreign Origin. Remote clients and live voice need the shared secret."""
-    test_origin = (host or "") == "testclient" and (
-        origin is not None and origin.startswith("http://testserver")
-    )
-    if origin and not origin_allowed(origin, allowed_origins) and not test_origin:
-        return False
+    tickets: VoiceTickets | None = None,
+) -> tuple[bool, str]:
+    """Reject a foreign Origin. Live and remote sockets need a one-time ticket, not the secret."""
+    if origin and not origin_allowed(origin, allowed_origins) and not _test_origin(host, origin):
+        return False, "origin not allowed"
     local = (host or "") in local_hosts()
     if live or not local:
-        if not secret or not token:
-            return False
-        return secrets_equal(token, secret)
-    if token and secret and not secrets_equal(token, secret):
-        return False
-    return True
+        if tickets is not None and tickets.consume(token):
+            return True, ""
+        return False, "not authorized"
+    return True, ""
 
 
 def enforce_tool_secret(request: Request) -> None:

@@ -44,9 +44,12 @@ class ToolLoop:
         self._filler_response_id: str | None = None
         self._awaiting_filler_id = False
         self.filler_sent = 0
+        self._response_active = False
 
     async def handle_server_event(self, event: dict[str, Any]) -> list[dict[str, Any]]:
         kind = event.get("type")
+        if kind == "response.created":
+            self._response_active = True
         if kind == "response.created" and self._awaiting_filler_id:
             response = event.get("response")
             if isinstance(response, dict):
@@ -56,6 +59,7 @@ class ToolLoop:
         if self._is_filler(event):
             if kind == "response.done":
                 self._filler_response_id = None
+                self._response_active = False
             return []
         if kind == "response.output_audio.delta":
             delta = event.get("delta") or ""
@@ -80,8 +84,12 @@ class ToolLoop:
         if kind == "input_audio_buffer.speech_started":
             self.rounds = 0
             self._pending = []
-            return [{"type": "response.cancel"}]
+            if self._response_active:
+                self._response_active = False
+                return [{"type": "response.cancel"}]
+            return []
         if kind == "response.done":
+            self._response_active = False
             if not self._pending:
                 self._audio_bytes = 0
                 self.rounds = 0
@@ -110,6 +118,28 @@ class ToolLoop:
         messages = [_output_message(call_id, result) for call_id, result in results]
         if had_audio and self.wait_playback is not None:
             await self.wait_playback()
+        names = [name for _call_id, name, _args in batch]
+        if "end_call" in names:
+            messages.append({"type": "call.end"})
+            return messages
+        speaks = [
+            str(result.get("speak"))
+            for _call_id, result in results
+            if isinstance(result, dict) and result.get("speak")
+        ]
+        if speaks and self.rounds <= self.max_rounds:
+            messages.append(
+                {
+                    "type": "conversation.item.create",
+                    "item": {
+                        "type": "force_message",
+                        "role": "assistant",
+                        "interruptible": True,
+                        "content": [{"type": "output_text", "text": " ".join(speaks)[:500]}],
+                    },
+                }
+            )
+            return messages
         if self.rounds > self.max_rounds:
             messages.append({"type": "response.create", "response": {"tool_choice": "none"}})
         else:

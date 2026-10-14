@@ -84,13 +84,13 @@ export MOVIEXFONE_TOOL_SECRET='a-long-random-string'
 python -m moviexfone
 ```
 
-Live voice will not start without that secret. Open `http://127.0.0.1:8000/?token=a-long-random-string` so the page can send it on the socket. The page does not reconnect a live call by itself.
+Live voice will not start without that secret. Open `http://127.0.0.1:8000`. The page asks `POST /v1/voice/ticket` for a one-minute ticket and opens the socket with that ticket. Do not put `MOVIEXFONE_TOOL_SECRET` in the page URL. The page does not reconnect a live call by itself.
 
 The key stays on the server. The page streams 24 kHz PCM to `/ws/voice` and plays the reply audio. The server opens `wss://api.x.ai/v1/realtime?model=grok-voice-think-fast-2.0`. One live session at a time. The bridge:
 
 1. Collects every function call until `response.done`.
 2. Runs them and sends every `function_call_output`.
-3. Sends **one** `response.create`.
+3. Speaks the tool's `speak` text with a `force_message` instead of a second model pass. Turns without a tool still use `response.create`.
 4. Stops after **two** tool rounds in one question, returns `tool_call_limit`, and the next `response.create` sets `tool_choice` to none. A new question gets a fresh budget.
 5. Does not say "let me check". If a tool takes longer than 700 ms it may say "One sec."
 
@@ -134,9 +134,10 @@ The eval is `pytest tests/test_eval.py`: 20 scripted caller questions against th
 - Assemble usually publishes through Thursday. "Today plus six days" is not something this feed can promise.
 - Assemble has no IMAX, Dolby, or 35mm field. Format answers come from Alamo's `formatSlug` only. If you ask for IMAX, the line says it does not have that listing.
 - No sold-out flag from Assemble. Alamo's sold-out and past sessions are dropped.
-- Nitehawk's homepage JSON-LD is today only. Later dates fall through to Assemble.
+- Nitehawk's homepage JSON-LD is often today only. The parser also reads the visible showtime buttons, and the fetcher asks for the next seven days.
 - "What's playing" only knows titles we have already stored (the fixture list, plus whatever Alamo and Nitehawk published). It will miss a film nobody has asked about and that Alamo is not playing.
 - Venue coordinates in the registry are approximate, good to about a block. Neighborhoods and landmarks are a local gazetteer; NYC Planning Labs GeoSearch is only the fallback, and it is skipped for names we already know so "Park Slope" does not become the Armory.
-- The bundled showtimes are illustrative, dated 2026-10-13, and are for the offline demo and the tests. Live mode never serves them. Turn on `MOVIEXFONE_LIVE_DATA` on a machine that can reach the feeds. Only Verity has a TMDB id in `data/movies.json` (1283515, from the 2026-10-13 Assemble capture), so the Assemble worker starts with that film.
+- The bundled showtimes are illustrative, dated 2026-10-13, and are for the offline demo and the tests. Live mode never serves them. Turn on `MOVIEXFONE_LIVE_DATA` on a machine that can reach the feeds. Assemble looks up a film id from its own search when `movies.json` has none.
+- The lockfile is for CPython 3.12. Start with `python -m moviexfone`. If you launch uvicorn yourself, set `MOVIEXFONE_BIND` to the same host as `--host`, because the startup check reads that variable.
 - Live xAI audio was not run in this workspace. There is no key here. The tool loop is tested with a fake session.
 - This is a local demo. It is not a public phone line, and it should not be branded as one.

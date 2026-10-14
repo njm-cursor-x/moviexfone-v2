@@ -74,30 +74,41 @@ def test_public_bind_and_live_voice_fail_closed(tmp_path) -> None:
 
 
 def test_remote_socket_needs_the_secret() -> None:
-    from moviexfone.api.security import voice_connection_allowed
+    from moviexfone.api.security import VoiceTickets, voice_connection_allowed
 
-    assert (
-        voice_connection_allowed(
-            origin="http://127.0.0.1:8000",
-            host="203.0.113.10",
-            token=None,
-            allowed_origins=("http://127.0.0.1:8000",),
-            secret="test-secret",
-            live=False,
-        )
-        is False
+    denied, reason = voice_connection_allowed(
+        origin="http://127.0.0.1:8000",
+        host="203.0.113.10",
+        token=None,
+        allowed_origins=("http://127.0.0.1:8000",),
+        secret="test-secret",
+        live=False,
     )
-    assert (
-        voice_connection_allowed(
-            origin="http://127.0.0.1:8000",
-            host="203.0.113.10",
-            token="test-secret",
-            allowed_origins=("http://127.0.0.1:8000",),
-            secret="test-secret",
-            live=True,
-        )
-        is True
+    assert denied is False
+    assert reason == "not authorized"
+    tickets = VoiceTickets()
+    nonce = tickets.issue()
+    allowed, _reason = voice_connection_allowed(
+        origin="http://127.0.0.1:8000",
+        host="203.0.113.10",
+        token=nonce,
+        allowed_origins=("http://127.0.0.1:8000",),
+        secret="test-secret",
+        live=True,
+        tickets=tickets,
     )
+    assert allowed is True
+    reused, reused_reason = voice_connection_allowed(
+        origin="http://127.0.0.1:8000",
+        host="203.0.113.10",
+        token="test-secret",
+        allowed_origins=("http://127.0.0.1:8000",),
+        secret="test-secret",
+        live=True,
+        tickets=tickets,
+    )
+    assert reused is False
+    assert reused_reason == "not authorized"
 
 
 def test_short_titles_and_new_york_do_not_auto_bind(db: Database) -> None:

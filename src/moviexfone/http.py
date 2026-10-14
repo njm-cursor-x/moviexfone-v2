@@ -31,6 +31,15 @@ class AllowedClient:
     def close(self) -> None:
         self._client.close()
 
+    def post(
+        self, url: str, *, json: dict[str, object] | None = None, max_bytes: int = 2_000_000
+    ) -> httpx.Response:
+        self._check(url)
+        response = self._client.post(url, json=json)
+        if len(response.content) > max_bytes:
+            raise UnsafeURLError("response too large")
+        return response
+
     def get(
         self, url: str, *, params: dict[str, str] | None = None, max_bytes: int = 8_000_000
     ) -> httpx.Response:

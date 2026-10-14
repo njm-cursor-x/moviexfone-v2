@@ -69,7 +69,10 @@ function speak(textToSay) {
 }
 
 function ensureAudio() {
-  if (!audioCtx) audioCtx = new AudioContext({ sampleRate: 24000 });
+  if (!audioCtx) {
+    const Context = window.AudioContext || window.webkitAudioContext;
+    audioCtx = new Context();
+  }
   if (audioCtx.state === "suspended") audioCtx.resume();
   return audioCtx;
 }
@@ -139,13 +142,21 @@ function downsample(input, inRate, outRate) {
   return out;
 }
 
-function connect() {
+async function connect() {
   if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
     return;
   }
   const proto = location.protocol === "https:" ? "wss" : "ws";
-  const token = new URLSearchParams(location.search).get("token");
-  const auth = token ? `?token=${encodeURIComponent(token)}` : "";
+  let auth = "";
+  try {
+    const response = await fetch("/v1/voice/ticket", { method: "POST" });
+    if (response.ok) {
+      const body = await response.json();
+      if (body.ticket) auth = `?ticket=${encodeURIComponent(body.ticket)}`;
+    }
+  } catch (_err) {
+    auth = "";
+  }
   socket = new WebSocket(`${proto}://${location.host}/ws/voice${auth}`);
   socket.onmessage = (event) => {
     const msg = JSON.parse(event.data);
@@ -191,11 +202,22 @@ function connect() {
     }
   };
   socket.onopen = () => {
-    retries = 0;
     modeEl.textContent = "connected";
   };
-  socket.onclose = () => {
+  socket.onclose = (event) => {
     stopMic();
+    if (event.code === 1008) {
+      sessionWanted = false;
+      modeEl.textContent = "idle";
+      addLine("MovieXFone", "Not authorized.");
+      return;
+    }
+    if (event.code === 1013) {
+      sessionWanted = false;
+      modeEl.textContent = "idle";
+      addLine("MovieXFone", "The line is busy. Try again in a minute.");
+      return;
+    }
     if (!sessionWanted || mode === "live") {
       sessionWanted = false;
       modeEl.textContent = "idle";
@@ -294,8 +316,14 @@ text.addEventListener("keydown", (event) => {
 
 mic.textContent = "Talk";
 mic.addEventListener("click", () => {
+  ensureAudio();
   if (micStream) {
     stopMic();
+    if (mode === "live" && socket && socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({ type: "close" }));
+      sessionWanted = false;
+      socket.close();
+    }
     return;
   }
   if (socket && socket.readyState === WebSocket.OPEN) {

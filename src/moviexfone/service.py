@@ -32,6 +32,7 @@ def ask(
             movie=parsed.movie,
             dates=list(parsed.dates),
             after_time=parsed.after_time,
+            before_time=parsed.before_time,
             format_name=parsed.format,
             page=page,
             now=now,

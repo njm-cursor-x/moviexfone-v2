@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import threading
@@ -29,23 +30,32 @@ _MAX_FRAME_CHARS = 65_536
 _MAX_SESSION_CHARS = 8_000_000
 
 
-async def handle_voice_socket(websocket: WebSocket, settings: Settings, db: Database) -> None:
+async def handle_voice_socket(
+    websocket: WebSocket,
+    settings: Settings,
+    db: Database,
+    refresher: Any | None = None,
+    tickets: Any | None = None,
+) -> None:
     await websocket.accept()
     host = websocket.client.host if websocket.client else None
-    if not voice_connection_allowed(
+    ticket = websocket.query_params.get("ticket") or websocket.query_params.get("token")
+    allowed, reason = voice_connection_allowed(
         origin=websocket.headers.get("origin"),
         host=host,
-        token=websocket.query_params.get("token"),
+        token=ticket,
         allowed_origins=settings.cors_origins,
         secret=settings.tool_secret,
         live=settings.live_voice,
-    ):
-        await websocket.send_json({"type": "error", "message": "origin not allowed"})
+        tickets=tickets,
+    )
+    if not allowed:
+        await websocket.send_json({"type": "error", "message": reason or "not authorized"})
         await websocket.close(code=1008)
         return
     if settings.voice_mode == "live":
         try:
-            await _run_live(websocket, settings, db)
+            await _run_live(websocket, settings, db, refresher)
             return
         except WebSocketDisconnect:
             return
@@ -101,7 +111,16 @@ async def _run_mock(websocket: WebSocket, db: Database) -> None:
         return
 
 
-async def _run_live(websocket: WebSocket, settings: Settings, db: Database) -> None:
+def _session_budget(seconds: int) -> int:
+    return int(max(60, seconds) * 64_000 * 1.2)
+
+
+async def _run_live(
+    websocket: WebSocket,
+    settings: Settings,
+    db: Database,
+    refresher: Any | None = None,
+) -> None:
     import websockets
 
     if not settings.xai_api_key:
@@ -112,12 +131,21 @@ async def _run_live(websocket: WebSocket, settings: Settings, db: Database) -> N
         return
     url = f"wss://api.x.ai/v1/realtime?model={settings.xai_model}"
     headers = {"Authorization": f"Bearer {settings.xai_api_key}"}
+    held = True
+
+    def release_slot() -> None:
+        nonlocal held
+        if held:
+            _UPSTREAM_SLOTS.release()
+            held = False
+
     try:
         async with websockets.connect(
             url,
             additional_headers=headers,
             max_size=_MAX_UPSTREAM_BYTES,
             open_timeout=20,
+            close_timeout=1,
         ) as upstream:
             await upstream.send(
                 json.dumps(
@@ -127,15 +155,23 @@ async def _run_live(websocket: WebSocket, settings: Settings, db: Database) -> N
                     }
                 )
             )
-            while True:
-                raw = await upstream.recv()
-                if isinstance(raw, bytes):
-                    continue
-                event = json.loads(raw)
-                if event.get("type") == "session.updated":
-                    break
-                if event.get("type") == "error":
-                    raise RuntimeError("session update was rejected")
+            try:
+                async with asyncio.timeout(10):
+                    while True:
+                        raw = await upstream.recv()
+                        if isinstance(raw, bytes):
+                            continue
+                        event = json.loads(raw)
+                        if event.get("type") == "session.updated":
+                            break
+                        if event.get("type") == "error":
+                            raise RuntimeError("session update was rejected")
+            except TimeoutError:
+                await websocket.send_json(
+                    {"type": "error", "message": "The voice service did not answer."}
+                )
+                await websocket.close(code=1011)
+                return
             await upstream.send(
                 json.dumps(
                     {
@@ -153,7 +189,9 @@ async def _run_live(websocket: WebSocket, settings: Settings, db: Database) -> N
                 {"type": "session.ready", "mode": "live", "greeting": GREETING}
             )
             loop = ToolLoop(
-                lambda name, args: _execute(db, name, args, live_data=settings.live_data),
+                lambda name, args: _execute(
+                    db, name, args, live_data=settings.live_data, refresher=refresher
+                ),
                 send=_send_upstream(upstream),
             )
 
@@ -168,8 +206,14 @@ async def _run_live(websocket: WebSocket, settings: Settings, db: Database) -> N
                             await websocket.close(code=1009)
                             return
                         received += len(data)
-                        if received > _MAX_SESSION_CHARS:
-                            await websocket.close(code=1009)
+                        if received > _session_budget(settings.max_session_seconds):
+                            await websocket.send_json(
+                                {
+                                    "type": "error",
+                                    "message": "This call has reached its length.",
+                                }
+                            )
+                            await websocket.close(code=1000)
                             return
                         await upstream.send(
                             json.dumps(
@@ -220,12 +264,20 @@ async def _run_live(websocket: WebSocket, settings: Settings, db: Database) -> N
                     elif kind == "response.done":
                         await websocket.send_json({"type": "transcript.done", "role": "assistant"})
                     elif kind == "error":
-                        await websocket.send_json(
-                            {"type": "error", "message": "The voice service returned an error."}
-                        )
-                        log.warning("realtime error type=%s", kind)
+                        detail = json.dumps(event)
+                        if "no active response" in detail.lower():
+                            log.info("ignored cancel with no active response")
+                        else:
+                            await websocket.send_json(
+                                {"type": "error", "message": "The voice service returned an error."}
+                            )
+                            log.warning("realtime error type=%s", kind)
                     outbound = await loop.handle_server_event(event)
                     for item in outbound:
+                        if item.get("type") == "call.end":
+                            await websocket.send_json({"type": "call.ended"})
+                            await websocket.close(code=1000)
+                            return
                         await upstream.send(json.dumps(item))
                         output = item.get("item")
                         if (
@@ -251,13 +303,20 @@ async def _run_live(websocket: WebSocket, settings: Settings, db: Database) -> N
                     await websocket.send_json(
                         {"type": "error", "message": "This call has reached its time limit."}
                     )
+                if limit in done:
+                    try:
+                        await websocket.close(code=1000)
+                    except Exception:
+                        log.info("time cap close")
             finally:
+                release_slot()
                 for task in (client_task, upstream_task, limit):
                     task.cancel()
                 await asyncio.gather(client_task, upstream_task, limit, return_exceptions=True)
-                await upstream.close()
+                with contextlib.suppress(Exception):
+                    await asyncio.wait_for(upstream.close(), timeout=1)
     finally:
-        _UPSTREAM_SLOTS.release()
+        release_slot()
 
 
 def _session_body(db: Database) -> dict[str, Any]:
@@ -291,8 +350,28 @@ def _session_body(db: Database) -> dict[str, Any]:
     }
 
 
+def _coerce_search(args: dict[str, Any]) -> dict[str, Any]:
+    data = dict(args)
+    allowed = {"any", "35mm", "imax", "70mm", "open_caption"}
+    if data.get("format") not in allowed:
+        data["format"] = "any"
+    page = data.get("page", 1)
+    if isinstance(page, bool) or not isinstance(page, int) or page < 1 or page > 10:
+        data["page"] = 1
+    location = data.get("location")
+    if isinstance(location, str) and len(location) > 120:
+        data["location"] = None
+        data["_location_too_long"] = True
+    return data
+
+
 async def _execute(
-    db: Database, name: str, args: dict[str, Any], *, live_data: bool = False
+    db: Database,
+    name: str,
+    args: dict[str, Any],
+    *,
+    live_data: bool = False,
+    refresher: Any | None = None,
 ) -> dict[str, Any]:
     from pydantic import ValidationError
 
@@ -309,15 +388,27 @@ async def _execute(
             return {"error": "movie_not_found", "speak": "Which movie?", "did_you_mean": []}
         return get_movie_info(db, movie)
     if name == "search_showtimes":
+        raw = _coerce_search(args)
+        if raw.pop("_location_too_long", False):
+            return {
+                "error": "location_not_found",
+                "speak": "Which neighborhood or theater?",
+            }
         try:
-            body = SearchIn.model_validate(args)
+            body = SearchIn.model_validate(raw)
         except ValidationError:
             return {
                 "error": "date_unclear",
                 "speak": "Which day do you mean?",
                 "note": "The arguments were not usable. Ask one short question.",
             }
-        dates, spoken, unclear = resolve_when(body.date, now)
+        window = resolve_when(body.date, now)
+        dates, spoken, unclear = window.dates, window.spoken, window.unclear
+        after = body.after_time or (
+            window.after.strftime("%H:%M") if window.after is not None else None
+        )
+        if refresher is not None and body.movie:
+            refresher.consider(body.movie)
         if not body.location:
             return {"error": "location_not_found", "speak": "Which neighborhood or theater?"}
         return search_showtimes(
@@ -325,7 +416,8 @@ async def _execute(
             location=body.location,
             movie=body.movie,
             dates=dates,
-            after_time=body.after_time,
+            after_time=after,
+            before_time=window.before.strftime("%H:%M") if window.before else None,
             format_name=body.format,
             page=body.page,
             now=now,

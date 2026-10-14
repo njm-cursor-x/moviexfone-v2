@@ -16,7 +16,7 @@ from datetime import datetime, timedelta
 from moviexfone.catalog import _apply, record_ingest
 from moviexfone.db import Database
 from moviexfone.http import AllowedClient
-from moviexfone.sources.fetch import ALL_CITIES, fetch_assemble_city
+from moviexfone.sources.fetch import ALL_CITIES, fetch_assemble_city, lookup_film_id
 from moviexfone.sources.fetch import _client as assemble_client
 from moviexfone.sources.parse import parse_assemble
 from moviexfone.timeutil import NY
@@ -24,6 +24,7 @@ from moviexfone.timeutil import NY
 log = logging.getLogger(__name__)
 
 _MAX_PER_MINUTE = 50
+_LOOKUP_MISS: dict[str, float] = {}
 
 
 class RequestBudget:
@@ -76,12 +77,12 @@ def refresh_assemble(
     """Fetch NYC cities for one stale catalog film, or each stale film when asked."""
     limiter = budget or RequestBudget()
     own_client = client is None
-    client = client or assemble_client()
+    client = client or assemble_client(timeout=90.0)
     total = 0
     errors: list[str] = []
-    movies = db.query(
-        "SELECT movie_id, title, tmdb_id FROM movie WHERE tmdb_id IS NOT NULL AND tmdb_id != ''"
-    )
+    fetched = False
+    started = datetime.now(NY)
+    movies = db.query("SELECT movie_id, title, tmdb_id FROM movie")
     try:
         for movie in movies:
             title = str(movie["title"])
@@ -90,7 +91,26 @@ def refresh_assemble(
             movie_id = str(movie["movie_id"])
             if assemble_is_fresh(db, movie_id, now=now, ttl=ttl):
                 continue
-            film_id = str(movie["tmdb_id"])
+            film_id = str(movie["tmdb_id"] or "")
+            if not film_id:
+                missed_at = _LOOKUP_MISS.get(movie_id)
+                if missed_at is not None and time.monotonic() - missed_at < 900:
+                    continue
+                for _attempt in range(3):
+                    limiter.wait()
+                try:
+                    found = lookup_film_id(title, client=client)
+                except Exception as exc:
+                    errors.append(type(exc).__name__)
+                    found = None
+                if not found:
+                    _LOOKUP_MISS[movie_id] = time.monotonic()
+                    continue
+                film_id = found
+                db.execute(
+                    "UPDATE movie SET tmdb_id = ? WHERE movie_id = ?",
+                    (film_id, movie_id),
+                )
             cleared = False
             for slug in ALL_CITIES:
                 limiter.wait()
@@ -108,14 +128,18 @@ def refresh_assemble(
                     )
                     cleared = True
                 total += _apply(db, rows, mode="insert", now=now)
-        record_ingest(
-            db,
-            source="assemble",
-            now=now,
-            ok=not errors or total > 0,
-            showtimes=total,
-            error=errors[0] if errors and total == 0 else None,
-        )
+                fetched = True
+        if fetched or errors:
+            record_ingest(
+                db,
+                source="assemble",
+                now=now,
+                ok=not errors or total > 0,
+                showtimes=total,
+                error=errors[0] if errors and total == 0 else None,
+                started=started,
+                finished=datetime.now(NY),
+            )
     finally:
         if own_client:
             client.close()

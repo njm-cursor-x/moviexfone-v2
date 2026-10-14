@@ -110,6 +110,7 @@ class ParsedQuestion:
     format: str
     date_spoken: str
     date_unclear: bool = False
+    before_time: str | None = None
 
 
 def parse_question(
@@ -124,6 +125,10 @@ def parse_question(
     fmt, raw_left = _format(raw)
     after = parse_after_phrase(raw)
     dates, spoken, raw_left, unclear = _dates(raw_left, now)
+    window = resolve_when(spoken, now)
+    if after is None and window.after is not None:
+        after = window.after
+    before = window.before
     movie, raw_left = _movie(raw_left, titles)
     if after is not None:
         raw_left = re.sub(
@@ -143,6 +148,7 @@ def parse_question(
         date=dates[0] if len(dates) == 1 else None,
         dates=tuple(dates),
         after_time=after.strftime("%H:%M") if after else None,
+        before_time=before.strftime("%H:%M") if before else None,
         format=fmt,
         date_spoken=spoken,
         date_unclear=unclear,
@@ -174,23 +180,43 @@ def _dates(text: str, now: datetime) -> tuple[list[str], str, str, bool]:
     cinema = business_date(now)
     local_day = now.astimezone(NY).date()
     if "this weekend" in text or re.search(r"\bweekend\b", text):
-        dates, spoken, _unclear = resolve_when("this weekend", now)
-        return dates, spoken, text.replace("this weekend", " ").replace("weekend", " "), False
+        weekend = resolve_when("this weekend", now)
+        return (
+            list(weekend.dates),
+            weekend.spoken,
+            text.replace("this weekend", " ").replace("weekend", " "),
+            False,
+        )
     nxt = re.search(rf"\bnext\s+({_WEEKDAY})\b", text)
     if nxt:
-        dates, spoken, unclear = resolve_when(nxt.group(0), now)
-        return dates, spoken, re.sub(rf"\bnext\s+{nxt.group(1)}\b", " ", text), unclear
+        following = resolve_when(nxt.group(0), now)
+        return (
+            list(following.dates),
+            following.spoken,
+            re.sub(rf"\bnext\s+{nxt.group(1)}\b", " ", text),
+            following.unclear,
+        )
     if "tomorrow" in text:
-        dates, spoken, _unclear = resolve_when("tomorrow", now)
-        return dates, spoken, text.replace("tomorrow", " "), False
+        phrase = "tomorrow"
+        for part in ("night", "evening", "morning", "afternoon"):
+            if f"tomorrow {part}" in text:
+                phrase = f"tomorrow {part}"
+                break
+        when = resolve_when(phrase, now)
+        return list(when.dates), when.spoken, text.replace(phrase, " "), False
     if "tonight" in text:
         return [cinema.isoformat()], "tonight", text.replace("tonight", " "), False
     if re.search(r"\btoday\b", text):
         return [cinema.isoformat()], "today", re.sub(r"\btoday\b", " ", text), False
-    match = re.search(rf"\b({_WEEKDAY})\b", text)
+    match = re.search(rf"\b({_WEEKDAY})(?:\s+(night|evening|morning|afternoon))?\b", text)
     if match:
-        dates, spoken, unclear = resolve_when(match.group(1), now)
-        return dates, spoken, re.sub(rf"\b{match.group(1)}\b", " ", text), unclear
+        when = resolve_when(match.group(0), now)
+        return (
+            list(when.dates),
+            when.spoken,
+            re.sub(re.escape(match.group(0)), " ", text),
+            when.unclear,
+        )
     if re.search(r"\b(next|someday|whenever)\b", text):
         return [local_day.isoformat()], "today", text, True
     return [cinema.isoformat()], "today", text, False

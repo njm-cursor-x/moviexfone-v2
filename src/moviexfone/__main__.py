@@ -17,6 +17,7 @@ def main() -> None:
         host=settings.bind,
         port=settings.port,
         log_level="info",
+        access_log=False,
     )
 
 

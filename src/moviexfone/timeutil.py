@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from datetime import date, datetime, time, timedelta
+from typing import NamedTuple
 from zoneinfo import ZoneInfo
 
 NY = ZoneInfo("America/New_York")
@@ -130,8 +131,39 @@ _MONTHS = {
 }
 
 
-def _strip_daypart(raw: str) -> str:
-    return re.sub(r"\s+(night|evening|afternoon|morning)$", "", raw.strip().lower())
+class When(NamedTuple):
+    dates: list[str]
+    spoken: str
+    unclear: bool
+    after: time | None = None
+    before: time | None = None
+
+
+def _daypart(raw: str) -> tuple[str, str | None]:
+    match = re.search(r"\s+(night|evening|afternoon|morning)$", raw.strip().lower())
+    if not match:
+        return raw.strip().lower(), None
+    return raw[: match.start()].strip().lower(), match.group(1)
+
+
+def _daypart_window(part: str | None) -> tuple[time | None, time | None, str]:
+    if part == "night":
+        return time(17, 0), None, " night"
+    if part == "evening":
+        return time(17, 0), None, " evening"
+    if part == "morning":
+        return None, time(12, 0), " morning"
+    if part == "afternoon":
+        return time(12, 0), time(17, 0), " afternoon"
+    return None, None, ""
+
+
+def _speak_day(day: date, cinema: date) -> str:
+    if day == cinema:
+        return "today"
+    if day == cinema + timedelta(days=1):
+        return "tomorrow"
+    return f"{day.strftime('%A')}, {day.strftime('%B')} {day.day}"
 
 
 def _month_day(raw: str, today: date) -> date | None:
@@ -170,28 +202,33 @@ def _month_day(raw: str, today: date) -> date | None:
     return found
 
 
-def resolve_when(value: str | None, now: datetime) -> tuple[list[str], str, bool]:
+def resolve_when(value: str | None, now: datetime) -> When:
     """Return ISO dates, a spoken label, and whether the phrase was unclear.
 
     An empty value means the cinema business day. A phrase we cannot read is
-    unclear instead of silently becoming today.
+    unclear instead of silently becoming today. "Tomorrow" after midnight is
+    the next cinema day, not the next calendar date.
     """
     local = now.astimezone(NY)
     cinema = business_date(now)
     if value is None or not value.strip():
-        return [cinema.isoformat()], "today", False
+        return When([cinema.isoformat()], "today", False)
     original = value.strip().lower()
-    raw = _strip_daypart(original)
+    raw, part = _daypart(original)
+    after, before, suffix = _daypart_window(part)
     if raw in {"today", "tonight"}:
         spoken = "tonight" if "tonight" in original or raw == "tonight" else "today"
-        return [cinema.isoformat()], spoken, False
+        if part and spoken != "tonight":
+            spoken = f"{spoken}{suffix}".strip()
+        return When([cinema.isoformat()], spoken, False, after, before)
     if raw == "tomorrow":
-        day = local.date() + timedelta(days=1)
-        return [day.isoformat()], "tomorrow", False
+        day = cinema + timedelta(days=1)
+        spoken = "tomorrow" if not suffix else f"tomorrow{suffix}"
+        return When([day.isoformat()], spoken, False, after, before)
     if "weekend" in raw:
         anchor = cinema if local.time() < time(3, 0) else local.date()
         days = upcoming_weekend(anchor)
-        return [day.isoformat() for day in days], "this weekend", False
+        return When([day.isoformat() for day in days], "this weekend", False, after, before)
     nxt = re.fullmatch(r"next\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)", raw)
     if nxt:
         target = _WEEKDAYS[nxt.group(1)]
@@ -199,19 +236,21 @@ def resolve_when(value: str | None, now: datetime) -> tuple[list[str], str, bool
         if delta == 0:
             delta = 7
         day = local.date() + timedelta(days=delta)
-        return [day.isoformat()], day.strftime("%A"), False
+        return When([day.isoformat()], f"next {day.strftime('%A')}", False, after, before)
     if raw in _WEEKDAYS:
         target = _WEEKDAYS[raw]
         delta = (target - local.date().weekday()) % 7
         day = local.date() + timedelta(days=delta)
-        return [day.isoformat()], day.strftime("%A"), False
+        return When(
+            [day.isoformat()], f"{day.strftime('%A')}{suffix}".strip(), False, after, before
+        )
     month_day = _month_day(raw, local.date())
     if month_day is not None:
-        return [month_day.isoformat()], month_day.strftime("%A"), False
+        return When([month_day.isoformat()], _speak_day(month_day, cinema), False, after, before)
     token = parse_date_token(raw, local.date())
     if token is not None and re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw):
-        return [token.isoformat()], token.isoformat(), False
-    return [], original, True
+        return When([token.isoformat()], _speak_day(token, cinema), False, after, before)
+    return When([], original, True)
 
 
 def parse_date_token(value: str | None, today: date) -> date | None:

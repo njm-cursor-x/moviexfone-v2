@@ -61,6 +61,20 @@ def _format_phrase(fmt: str) -> str:
     return f" in {spoken}"
 
 
+_DAY_START = re.compile(r"^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|next)\b")
+
+
+def _starts_with_day(clock: str) -> bool:
+    return bool(_DAY_START.match(clock))
+
+
+def _sentence(text: str) -> str:
+    cleaned = text.strip()
+    if cleaned.endswith("."):
+        return cleaned
+    return f"{cleaned}."
+
+
 def _clocks(card: ShowCard, max_times: int, name_days: bool) -> str:
     moments = card.times_local[:max_times]
     words = [spoken_time(moment) for moment in moments]
@@ -86,22 +100,25 @@ def render_speak(
     for index, card in enumerate(cards):
         clock = _clocks(card, max_times, name_days)
         fmt = _format_phrase(card.format_norm)
+        link = "on" if _starts_with_day(clock) else "at"
         if specific_movie:
             if index == 0:
-                parts.append(f"{when} at {card.theater}, {card.movie}{fmt} at {clock}.")
+                parts.append(
+                    _sentence(f"{when} at {card.theater}, {card.movie}{fmt} {link} {clock}")
+                )
             else:
-                parts.append(f"At {card.theater}, {clock}.")
+                parts.append(_sentence(f"At {card.theater}, {clock}"))
         elif same_theater:
             if index == 0:
-                parts.append(f"{when}: {card.movie}{fmt} at {clock}")
+                parts.append(f"{when}: {card.movie}{fmt} {link} {clock}")
             elif index == len(cards) - 1:
-                parts.append(f"and {card.movie}{fmt} at {clock}.")
+                parts.append(_sentence(f"and {card.movie}{fmt} {link} {clock}"))
             else:
-                parts.append(f"{card.movie}{fmt} at {clock}")
+                parts.append(f"{card.movie}{fmt} {link} {clock}")
         elif index == 0:
-            parts.append(f"{when}: {card.movie} at {card.theater}{fmt} at {clock}.")
+            parts.append(_sentence(f"{when}: {card.movie} at {card.theater}{fmt} {link} {clock}"))
         else:
-            parts.append(f"{card.movie} at {card.theater}{fmt} at {clock}.")
+            parts.append(_sentence(f"{card.movie} at {card.theater}{fmt} {link} {clock}"))
     if same_theater and parts:
         text = " ".join(parts)
         if not text.endswith("."):
@@ -155,6 +172,10 @@ def trim_cards(
         times = min(times, 2)
         speak = _speak(chosen, extra, times)
         more_after = extra
+    hidden = sum(max(0, len(card.times_local) - times) for card in chosen)
+    if hidden and specific_movie:
+        speak = speak.rstrip(".")
+        speak = f"{speak}, and {hidden} more."
     trimmed: list[ShowCard] = []
     for card in chosen:
         trimmed.append(

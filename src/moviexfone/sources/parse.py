@@ -48,6 +48,8 @@ class IncomingShow:
     status: str
     ticket_url: str | None
     source: str
+    rating: str | None = None
+    synopsis: str | None = None
 
 
 def _as_dt(value: str) -> datetime | None:
@@ -103,6 +105,7 @@ def parse_alamo(payload: dict[str, Any], *, source: str = "alamo_json") -> list[
         return []
     presentations = data.get("presentations") or []
     titles: dict[str, str] = {}
+    meta: dict[str, tuple[str | None, str | None]] = {}
     for item in presentations:
         if not isinstance(item, dict):
             continue
@@ -112,6 +115,9 @@ def parse_alamo(payload: dict[str, Any], *, source: str = "alamo_json") -> list[
         title = sanitize_display(str(show.get("title") or item.get("title") or slug), limit=120)
         if slug and title:
             titles[slug] = title
+            rating = sanitize_display(str(show.get("certification") or ""), limit=12) or None
+            synopsis = sanitize_display(str(show.get("headline") or ""), limit=160) or None
+            meta[slug] = (rating, synopsis)
     cinemas: dict[str, str] = {}
     market = data.get("market") or []
     blocks = market if isinstance(market, list) else [market]
@@ -144,6 +150,7 @@ def parse_alamo(payload: dict[str, Any], *, source: str = "alamo_json") -> list[
             f"https://drafthouse.com/nyc/show/{session.get('presentationSlug')}"
             f"?cinemaId={session.get('cinemaId')}&sessionId={session_id}"
         )
+        rating, synopsis = meta.get(str(session.get("presentationSlug") or ""), (None, None))
         rows.append(
             IncomingShow(
                 theater_key=theater_id,
@@ -154,6 +161,8 @@ def parse_alamo(payload: dict[str, Any], *, source: str = "alamo_json") -> list[
                 status=status,
                 ticket_url=ticket,
                 source=source,
+                rating=rating,
+                synopsis=synopsis,
             )
         )
     return rows
@@ -331,7 +340,62 @@ def parse_nitehawk_html(
                     source=source,
                 )
             )
+    rows.extend(_visible_nitehawk(html, default_theater, source))
+    return _dedupe_shows(rows)
+
+
+def _visible_nitehawk(html: str, default_theater: str, source: str) -> list[IncomingShow]:
+    """Showtimes printed on the page, including ones missing from JSON-LD."""
+    rows: list[IncomingShow] = []
+    chunks = re.split(r'<div class="show-title">', html)
+    for chunk in chunks[1:]:
+        title_match = re.match(r"\s*([^<]+)", chunk)
+        if not title_match:
+            continue
+        title = sanitize_display(title_match.group(1), limit=120)
+        if not title:
+            continue
+        for item in re.finditer(
+            r'<li[^>]*data-date="(\d+)"[^>]*>(.*?)</li>', chunk, flags=re.IGNORECASE | re.DOTALL
+        ):
+            body = item.group(2)
+            if re.search(r"showtime\s+past", body, re.IGNORECASE):
+                continue
+            clock = re.search(r"(\d{1,2}):(\d{2})\s*([ap])\.?m", body, re.IGNORECASE)
+            if not clock:
+                continue
+            hour = int(clock.group(1)) % 12
+            if clock.group(3).lower() == "p":
+                hour += 12
+            minute = int(clock.group(2))
+            day = datetime.fromtimestamp(int(item.group(1)), NY).date()
+            starts = datetime(day.year, day.month, day.day, hour, minute, tzinfo=NY)
+            href = re.search(r'href="(https://nitehawkcinema\.com/[^"]+)"', body)
+            rows.append(
+                IncomingShow(
+                    theater_key=default_theater,
+                    movie_title=title,
+                    starts_at=starts,
+                    format_norm="unknown",
+                    format_label=None,
+                    status="on_sale",
+                    ticket_url=sanitize_url(href.group(1) if href else None),
+                    source=source,
+                )
+            )
     return rows
+
+
+def _dedupe_shows(rows: list[IncomingShow]) -> list[IncomingShow]:
+    seen: set[tuple[str, str]] = set()
+    unique: list[IncomingShow] = []
+    for row in rows:
+        key = (row.movie_title.lower(), row.starts_at.isoformat())
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(row)
+    return unique
 
 
 def business_dates_of(rows: list[IncomingShow]) -> set[str]:

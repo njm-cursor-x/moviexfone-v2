@@ -85,9 +85,13 @@ def sanitize_url(url: str | None) -> str | None:
     return raw
 
 
+_QUERY_SECRET = re.compile(r"((?:token|ticket)=)[^&\s\"']+", re.IGNORECASE)
+
+
 def redact(text: str, secrets: list[str] | None = None) -> str:
     """Remove credentials from log lines."""
-    redacted = _BEARER.sub("Bearer [redacted]", text)
+    redacted = _QUERY_SECRET.sub(r"\1[redacted]", text)
+    redacted = _BEARER.sub("Bearer [redacted]", redacted)
     redacted = _XAI_KEY.sub("xai-[redacted]", redacted)
     for secret in secrets or []:
         if secret and secret in redacted:

@@ -53,6 +53,7 @@ def search_showtimes(
     movie: str | None = None,
     dates: list[str],
     after_time: str | None = None,
+    before_time: str | None = None,
     format_name: str = "any",
     page: int = 1,
     now: datetime,
@@ -87,13 +88,24 @@ def search_showtimes(
             "speak": "Which neighborhood or theater?",
         }
     if resolution.kind == "theater" and resolution.covered is False:
-        return _uncovered(resolution, date_spoken)
+        has_rows = False
+        if resolution.theater_ids:
+            has_rows = (
+                db.query_one(
+                    "SELECT 1 AS n FROM showtime WHERE theater_id = ? LIMIT 1",
+                    (resolution.theater_ids[0],),
+                )
+                is not None
+            )
+        if not has_rows:
+            return _uncovered(resolution, date_spoken)
 
     movie_id, movie_title, movie_error = _movie(db, movie)
     if movie_error is not None:
         return movie_error
 
     after = parse_clock(after_time) if after_time else None
+    before = parse_clock(before_time) if before_time else None
     after = tonight_after(now.astimezone(NY).time(), after, date_spoken)
     rows = _rows(db)
     matched = [
@@ -104,6 +116,7 @@ def search_showtimes(
         and _format_ok(row, format_name)
         and row.starts_at >= now
         and show_matches_after(row.local_t, after)
+        and (before is None or row.local_t < before)
         and _in_resolution(row, resolution)
     ]
     if format_name not in {"", "any"} and not matched:
@@ -111,7 +124,7 @@ def search_showtimes(
 
     if not matched:
         if movie_id is None:
-            return _nothing_listed(resolution, date_spoken, rows, now)
+            return _nothing_listed(resolution, date_spoken, rows, now, dates)
         return _alternative(
             rows,
             resolution,
@@ -126,7 +139,7 @@ def search_showtimes(
     cards = _cards(matched, resolution, broad=movie_id is None)
     when = _when_phrase(date_spoken, resolution, specific=movie_id is not None)
     max_cards = 2
-    max_times = 3 if movie_id is not None else 2
+    max_times = 6 if movie_id is not None else 2
     oldest = min((row.fetched_at for row in matched), default=now)
     caveat = staleness_phrase(oldest, now)
     if caveat and "current times" in caveat:
@@ -153,6 +166,13 @@ def search_showtimes(
     ]
     if used:
         oldest = min(row.fetched_at for row in used)
+    if movie_id is None:
+        missing = db.query_one(
+            """SELECT COUNT(*) AS n FROM movie m
+               WHERE NOT EXISTS (SELECT 1 FROM showtime s WHERE s.movie_id = m.movie_id)"""
+        )
+        if missing and int(missing["n"]) > 0 and chosen:
+            speak = f"{speak} I only have live times for some titles.".strip()
     payload = _payload(resolution, date_spoken, chosen, more, speak, oldest)
     if not chosen:
         payload["note"] = "No further listings. Do not search again."
@@ -337,6 +357,8 @@ def _cards(rows: list[_Row], resolution: Resolution, *, broad: bool) -> list[Sho
     for bucket in grouped.values():
         bucket.sort(key=lambda item: item.starts_at)
         first = bucket[0]
+        if not first.theater or not first.movie:
+            continue
         cards.append(
             ShowCard(
                 theater=first.theater,
@@ -375,15 +397,14 @@ def _cards(rows: list[_Row], resolution: Resolution, *, broad: bool) -> list[Sho
 
 def _when_phrase(date_spoken: str, resolution: Resolution, *, specific: bool) -> str:
     when = date_spoken[:1].upper() + date_spoken[1:]
-    if specific:
+    label = sanitize_display(resolution.label, limit=80) or "that area"
+    if specific or resolution.kind == "theater":
         return when
-    if resolution.kind == "theater":
-        return f"{when} at {resolution.label}"
     if resolution.kind == "borough":
-        return f"{when} in {resolution.label}"
+        return f"{when} in {label}"
     if resolution.kind == "chain":
-        return f"{when} at {resolution.label}"
-    return f"{when} near {resolution.label}"
+        return f"{when} at {label}"
+    return f"{when} near {label}"
 
 
 def _payload(
@@ -482,9 +503,10 @@ def _nothing_listed(
     date_spoken: str,
     rows: list[_Row],
     now: datetime,
+    dates: list[str],
 ) -> dict[str, Any]:
     speak = f"I don't have live times I can see for {resolution.label}."
-    upcoming = [row for row in rows if row.starts_at >= now]
+    upcoming = [row for row in rows if row.starts_at >= now and row.business_date in dates]
     alternative = None
     if upcoming and resolution.lat is not None and resolution.lng is not None:
         upcoming.sort(key=lambda row: _distance(row, resolution) or 99.0)
@@ -499,9 +521,10 @@ def _nothing_listed(
                 "format": None,
                 "ticket_url": nearest.ticket_url,
             }
+            day = nearest.starts_at.astimezone(NY).strftime("%A")
             speak = (
-                f"{speak} The closest listing I have is {spoken_time(nearest.local_t)} "
-                f"at {nearest.theater}."
+                f"{speak} The closest listing I have is {nearest.movie} at {nearest.theater} "
+                f"on {day} at {spoken_time(nearest.local_t)}."
             )
     return {
         "resolved_location": _resolved_json(resolution),

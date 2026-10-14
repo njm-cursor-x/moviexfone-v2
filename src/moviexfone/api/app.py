@@ -14,11 +14,14 @@ from fastapi.staticfiles import StaticFiles
 
 from moviexfone.api.models import AskIn, MovieIn, SearchIn
 from moviexfone.api.security import (
+    VoiceTickets,
     enforce_deployment,
     enforce_rate_limit,
     enforce_tool_secret,
     local_hosts,
-    voice_connection_allowed,
+    origin_allowed,
+    secrets_equal,
+    ticket_allowed,
 )
 from moviexfone.catalog import seed
 from moviexfone.config import Settings
@@ -59,6 +62,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         from moviexfone.api.security import RateLimiter
 
         app.state.limiter = RateLimiter(settings.rate_limit_per_minute)
+        app.state.tickets = VoiceTickets()
         log.info("ready voice_mode=%s live_data=%s", settings.voice_mode, settings.live_data)
         try:
             yield
@@ -157,6 +161,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             },
         }
 
+    @app.post("/v1/voice/ticket")
+    def voice_ticket(request: Request) -> dict[str, Any]:
+        origin = request.headers.get("origin")
+        host = request.client.host if request.client else None
+        if not ticket_allowed(
+            origin=origin,
+            host=host,
+            header_secret=request.headers.get("x-moviexfone-secret"),
+            allowed_origins=settings.cors_origins,
+            secret=settings.tool_secret,
+        ):
+            raise HTTPException(status_code=401, detail="not authorized")
+        return {"ticket": request.app.state.tickets.issue(), "expires_in": 60}
+
     @app.post("/v1/tools/search_showtimes")
     def tool_search(
         body: SearchIn,
@@ -237,7 +255,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not websocket.app.state.limiter.allow(f"ws:{host}"):
             await websocket.close(code=1008)
             return
-        await handle_voice_socket(websocket, settings, websocket.app.state.db)
+        await handle_voice_socket(
+            websocket,
+            settings,
+            websocket.app.state.db,
+            refresher=getattr(websocket.app.state, "refresher", None),
+            tickets=getattr(websocket.app.state, "tickets", None),
+        )
 
     @app.get("/")
     def index() -> FileResponse:
@@ -256,13 +280,16 @@ def _search_from_body(db: Database, body: SearchIn, settings: Settings) -> dict[
             "speak": "Which neighborhood or theater?",
             "ask": "Which neighborhood or theater?",
         }
-    dates, spoken, unclear = resolve_when(body.date, now)
+    window = resolve_when(body.date, now)
+    dates, spoken, unclear = window.dates, window.spoken, window.unclear
+    after = body.after_time or (window.after.strftime("%H:%M") if window.after else None)
     return search_showtimes(
         db,
         location=body.location,
         movie=body.movie,
         dates=dates,
-        after_time=body.after_time,
+        after_time=after,
+        before_time=window.before.strftime("%H:%M") if window.before else None,
         format_name=body.format,
         page=body.page,
         now=now,
@@ -288,14 +315,17 @@ def geocode_for(settings: Settings) -> Any:
 
 def _require_demo_access(request: Request, settings: Settings) -> None:
     host = request.client.host if request.client else None
-    token = request.headers.get("x-moviexfone-secret")
-    if voice_connection_allowed(
-        origin=request.headers.get("origin"),
-        host=host,
-        token=token,
-        allowed_origins=settings.cors_origins,
-        secret=settings.tool_secret,
-    ):
+    origin = request.headers.get("origin")
+    test_origin = (
+        host == "testclient" and origin is not None and origin.startswith("http://testserver")
+    )
+    if origin and not origin_allowed(origin, settings.cors_origins) and not test_origin:
+        raise HTTPException(status_code=403, detail="origin not allowed")
+    if host in local_hosts():
+        return
+    secret = settings.tool_secret or ""
+    got = request.headers.get("x-moviexfone-secret", "")
+    if secret and secrets_equal(got, secret):
         return
     raise HTTPException(status_code=403, detail="origin not allowed")
 

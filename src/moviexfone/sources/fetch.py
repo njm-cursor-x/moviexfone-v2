@@ -34,14 +34,15 @@ CITY_SLUGS = {
 ALL_CITIES = tuple(slug for slugs in CITY_SLUGS.values() for slug in slugs)
 
 
-def _client() -> AllowedClient:
+def _client(*, timeout: float = 20.0) -> AllowedClient:
     return AllowedClient(
         {
             "drafthouse.com",
             "api.assemble.film",
             "nitehawkcinema.com",
             "geosearch.planninglabs.nyc",
-        }
+        },
+        timeout=timeout,
     )
 
 
@@ -59,18 +60,28 @@ def fetch_alamo(client: AllowedClient | None = None) -> list[IncomingShow]:
 
 
 def fetch_nitehawk(client: AllowedClient | None = None) -> list[IncomingShow]:
+    from datetime import date, timedelta
+
     own = client is None
     http = client or _client()
     rows: list[IncomingShow] = []
     try:
         for theater_id, url in NITEHAWK_URLS.items():
-            response = http.get(url, max_bytes=2_000_000)
-            if response.status_code != 200:
-                log.warning(
-                    "nitehawk fetch failed status=%s theater=%s", response.status_code, theater_id
-                )
-                continue
-            rows.extend(parse_nitehawk_html(response.text, default_theater=theater_id))
+            days = [date.today() + timedelta(days=offset) for offset in range(7)]
+            for index, day in enumerate(days):
+                target = url if index == 0 else f"{url}?date={day.isoformat()}"
+                if index:
+                    time.sleep(0.3)
+                response = http.get(target, max_bytes=2_000_000)
+                if response.status_code != 200:
+                    if index == 0:
+                        log.warning(
+                            "nitehawk fetch failed status=%s theater=%s",
+                            response.status_code,
+                            theater_id,
+                        )
+                    continue
+                rows.extend(parse_nitehawk_html(response.text, default_theater=theater_id))
         return rows
     finally:
         if own:
@@ -86,10 +97,15 @@ def fetch_assemble_city(
     if not _TMDB_RE.fullmatch(tmdb_id) or not _CITY_RE.fullmatch(city_slug):
         raise UnsafeURLError("bad assemble path")
     own = client is None
-    http = client or _client()
+    http = client or _client(timeout=90.0)
     try:
         url = f"https://api.assemble.film/films/{tmdb_id}/screenings"
-        response = http.get(url, params={"city": city_slug}, max_bytes=2_000_000)
+        try:
+            response = http.get(url, params={"city": city_slug}, max_bytes=2_000_000)
+        except httpx.TimeoutException:
+            log.info("assemble cold timeout city=%s", city_slug)
+            time.sleep(30)
+            response = http.get(url, params={"city": city_slug}, max_bytes=2_000_000)
         if response.status_code == 429:
             retry = response.headers.get("Retry-After", "5")
             try:
@@ -131,6 +147,85 @@ def fetch_assemble_film(
     finally:
         if own:
             http.close()
+
+
+def lookup_film_id(title: str, *, client: AllowedClient) -> str | None:
+    """Resolve a catalog title through Assemble's search, listing, or find_film."""
+    cleaned = re.sub(r"\s+", " ", title).strip()
+    if not cleaned or len(cleaned) > 120:
+        return None
+    attempts = (
+        ("https://api.assemble.film/films/search", {"q": cleaned}),
+        ("https://api.assemble.film/films", {"query": cleaned}),
+    )
+    for url, params in attempts:
+        found = _read_film_id(client, url, params, cleaned)
+        if found:
+            return found
+    return _read_film_id(
+        client,
+        ASSEMBLE_MCP,
+        None,
+        cleaned,
+        post={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {"name": "find_film", "arguments": {"query": cleaned, "title": cleaned}},
+        },
+    )
+
+
+def _read_film_id(
+    client: AllowedClient,
+    url: str,
+    params: dict[str, str] | None,
+    title: str,
+    post: dict[str, object] | None = None,
+) -> str | None:
+    try:
+        if post is None:
+            response = client.get(url, params=params, max_bytes=1_000_000)
+        else:
+            response = client.post(url, json=post, max_bytes=500_000)
+    except (httpx.HTTPError, UnsafeURLError):
+        return None
+    if response.status_code != 200:
+        return None
+    try:
+        payload = response.json()
+    except ValueError:
+        return None
+    return _film_id_from(payload, title)
+
+
+def _film_id_from(payload: object, title: str) -> str | None:
+    wanted = re.sub(r"[^a-z0-9]+", " ", title.lower()).strip()
+    found: list[str] = []
+
+    def walk(node: object) -> None:
+        if isinstance(node, dict):
+            label = ""
+            for key in ("title", "name", "film_title"):
+                value = node.get(key)
+                if isinstance(value, str):
+                    label = value
+                    break
+            folded = re.sub(r"[^a-z0-9]+", " ", label.lower()).strip() if label else ""
+            if folded == wanted:
+                for key in ("tmdb_id", "film_id", "id"):
+                    value = node.get(key)
+                    if isinstance(value, (str, int)) and re.fullmatch(r"\d{2,12}", str(value)):
+                        found.append(str(value))
+                        break
+            for value in node.values():
+                walk(value)
+        elif isinstance(node, list):
+            for value in node:
+                walk(value)
+
+    walk(payload)
+    return found[0] if found else None
 
 
 def geosearch(text: str, client: AllowedClient | None = None) -> dict[str, Any] | None:
@@ -175,7 +270,11 @@ def pick_geosearch(payload: dict[str, Any], query: str) -> dict[str, Any] | None
             rank = 1
         elif props.get("housenumber"):
             rank = 20
+        name = str(props.get("name") or "")
+        if zip_query and props.get("housenumber") and name.startswith(query.strip()):
+            rank = 80
         ranked.append((rank, feature))
+    ranked = [item for item in ranked if item[0] < 80]
     ranked.sort(key=lambda item: item[0])
     for _rank, feature in ranked:
         if not isinstance(feature, dict):

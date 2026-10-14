@@ -95,6 +95,20 @@ def resolve_location(
             label="New York",
             options=[],
         )
+    named = [place for place in places if folded == normalize_place(place.name)]
+    if len(named) == 1:
+        place = named[0]
+        return Resolution(
+            kind="borough" if place.kind == "borough" else "place",
+            label=place.name,
+            lat=place.lat,
+            lng=place.lng,
+            radius_mi=place.radius_mi,
+            borough=place.borough,
+        )
+    local = _local_place(query)
+    if local is not None:
+        return local
     exact_place_name = any(folded == normalize_place(place.name) for place in places)
     if len(folded.split()) == 1 and len(folded) >= 4 and not exact_place_name:
         mentions: list[tuple[str, str]] = []
@@ -241,6 +255,26 @@ def _ambiguous(options: list[str]) -> Resolution:
     )
 
 
+def _local_place(query: str) -> Resolution | None:
+    from moviexfone.localgeo import lookup_local
+
+    hit = lookup_local(query)
+    if hit is None:
+        return None
+    lat = hit["lat"]
+    lng = hit["lng"]
+    if not isinstance(lat, float) or not isinstance(lng, float):
+        return None
+    return Resolution(
+        kind="place",
+        label=str(hit["label"]),
+        lat=lat,
+        lng=lng,
+        radius_mi=0.6,
+        borough=str(hit["borough"]) if hit.get("borough") else None,
+    )
+
+
 def _from_geocode(query: str, geocode: Geocoder | None) -> Resolution:
     if geocode is None or "://" in query or query.strip().startswith("//"):
         return Resolution(kind="not_found", label=query.strip())
@@ -256,7 +290,15 @@ def _from_geocode(query: str, geocode: Geocoder | None) -> Resolution:
     borough = borough_of(lat, lng)
     if borough is None:
         return Resolution(kind="not_found", label=query.strip())
-    label = str(hit.get("label") or query.strip())
+    raw_label = str(hit.get("label") or query.strip())
+    letters = [char for char in raw_label if char.isalpha()]
+    upper = sum(char.isupper() for char in letters)
+    if letters and upper / len(letters) > 0.7:
+        label = borough or query.strip()
+    elif query.strip().isdigit() and raw_label.startswith(query.strip()):
+        label = borough or query.strip()
+    else:
+        label = raw_label
     return Resolution(
         kind="place",
         label=label,

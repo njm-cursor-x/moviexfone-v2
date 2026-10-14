@@ -40,8 +40,9 @@ async def test_batches_every_call_into_one_response_create() -> None:
     assert [item["type"] for item in outbound] == [
         "conversation.item.create",
         "conversation.item.create",
-        "response.create",
+        "conversation.item.create",
     ]
+    assert outbound[2]["item"]["type"] == "force_message"
     assert len(seen) == 2
     outputs = [
         item["item"]
