@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, replace
 from datetime import datetime, time, timedelta
 from typing import Any
 
 from moviexfone.catalog import load_places, load_theater_refs
 from moviexfone.db import Database
-from moviexfone.geo import borough_of, haversine_miles
+from moviexfone.geo import BOROUGHS, borough_of, haversine_miles
 from moviexfone.locations import PlaceRef, Resolution, TheaterRef, resolve_location
 from moviexfone.nlu import tonight_after
 from moviexfone.sanitize import sanitize_display
@@ -108,7 +109,7 @@ def search_showtimes(
     after = parse_clock(after_time) if after_time else None
     before = parse_clock(before_time) if before_time else None
     after = tonight_after(now.astimezone(NY).time(), after, date_spoken)
-    rows = _rows(db)
+    rows = _load_primary(db, now, dates, movie_id, resolution)
 
     def _matched(where: Resolution) -> list[_Row]:
         return [
@@ -141,7 +142,12 @@ def search_showtimes(
         if later is not None:
             return later
         if movie_id is None:
+            # Nearest-listing fallback looks 15 miles out, still on the asked dates.
+            if resolution.lat is not None and resolution.lng is not None:
+                rows = _load_nearby(db, now, dates, resolution.lat, resolution.lng, 15.0)
             return _nothing_listed(resolution, date_spoken, rows, now, dates)
+        # Closest other listing can be any future show of this film, not every row.
+        rows = _load_movie_future(db, now, movie_id)
         return _alternative(
             rows,
             resolution,
@@ -316,17 +322,194 @@ def _places() -> list[PlaceRef]:
     return [place for place in load_places() if isinstance(place, PlaceRef)]
 
 
-def _rows(db: Database) -> list[_Row]:
-    sql = """
-    SELECT s.*, t.spoken_name, t.borough, t.lat, t.lng, t.covered, t.website, t.status,
-           m.title AS movie_title
-    FROM showtime s
-    JOIN theater t ON t.theater_id = s.theater_id
-    JOIN movie m ON m.movie_id = s.movie_id
-    WHERE t.status = 'open' AND s.status = 'on_sale'
-    """
+_SHOW_COLUMNS = """
+SELECT s.theater_id, s.movie_id, s.starts_at, s.business_date, s.format_norm,
+       s.ticket_url, s.source, s.fetched_at,
+       t.spoken_name, t.borough, t.lat, t.lng, t.covered, t.website,
+       m.title AS movie_title
+FROM showtime s
+JOIN theater t ON t.theater_id = s.theater_id
+JOIN movie m ON m.movie_id = s.movie_id
+WHERE t.status = 'open' AND s.status = 'on_sale'
+"""
+
+# Fixed placeholders. Values we do not have are sentinels that match nothing.
+_DATE_SLOTS = 4
+_THEATER_SLOTS = 16
+_EMPTY_DAY = "0001-01-01"
+
+_BY_THEATER = (
+    _SHOW_COLUMNS
+    + """
+  AND s.starts_at >= ?
+  AND s.business_date IN (?, ?, ?, ?)
+  AND (? = 1 OR s.movie_id = ?)
+  AND s.theater_id IN (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+"""
+)
+_BY_BOX = (
+    _SHOW_COLUMNS
+    + """
+  AND s.starts_at >= ?
+  AND s.business_date IN (?, ?, ?, ?)
+  AND (? = 1 OR s.movie_id = ?)
+  AND t.lat BETWEEN ? AND ? AND t.lng BETWEEN ? AND ?
+"""
+)
+_BY_BOROUGH = (
+    _SHOW_COLUMNS
+    + """
+  AND s.starts_at >= ?
+  AND s.business_date IN (?, ?, ?, ?)
+  AND (? = 1 OR s.movie_id = ?)
+  AND (
+        (t.lat BETWEEN ? AND ? AND t.lng BETWEEN ? AND ?)
+        OR (t.lat IS NULL AND t.borough = ?)
+      )
+"""
+)
+_NEARBY = (
+    _SHOW_COLUMNS
+    + """
+  AND s.starts_at >= ?
+  AND s.business_date IN (?, ?, ?, ?)
+  AND t.lat BETWEEN ? AND ? AND t.lng BETWEEN ? AND ?
+"""
+)
+_MOVIE_FUTURE = (
+    _SHOW_COLUMNS
+    + """
+  AND s.starts_at >= ?
+  AND s.movie_id = ?
+"""
+)
+
+
+def _mile_box(lat: float, lng: float, miles: float) -> tuple[float, float, float, float]:
+    """Bounding square around a circle. Padding keeps the haversine edge inside."""
+    dlat = miles / 69.0 + 0.02
+    cosine = math.cos(math.radians(lat))
+    dlng = miles / (69.0 * max(0.2, cosine)) + 0.02
+    return lat - dlat, lat + dlat, lng - dlng, lng + dlng
+
+
+def _borough_box(name: str) -> tuple[float, float, float, float]:
+    ring = BOROUGHS[name]
+    lngs = [point[0] for point in ring]
+    lats = [point[1] for point in ring]
+    pad = 0.02
+    return min(lats) - pad, max(lats) + pad, min(lngs) - pad, max(lngs) + pad
+
+
+def _date_window(dates: list[str], now: datetime, resolution: Resolution) -> list[str]:
+    window = list(dates)
+    if resolution.kind in {"theater", "place"}:
+        tomorrow = (business_date(now) + timedelta(days=1)).isoformat()
+        if tomorrow not in window:
+            window.append(tomorrow)
+    return window
+
+
+def _pad_dates(dates: list[str]) -> tuple[str, ...]:
+    window = dates[:_DATE_SLOTS]
+    return tuple([*window, *[_EMPTY_DAY] * (_DATE_SLOTS - len(window))])
+
+
+def _movie_flag(movie_id: str | None) -> tuple[int, str]:
+    if movie_id is None:
+        return 1, ""
+    return 0, movie_id
+
+
+def _load_primary(
+    db: Database,
+    now: datetime,
+    dates: list[str],
+    movie_id: str | None,
+    resolution: Resolution,
+) -> list[_Row]:
+    stamp = now.astimezone(NY).isoformat(timespec="seconds")
+    window = _date_window(dates, now, resolution)
+    flag, film = _movie_flag(movie_id)
+    if resolution.kind in {"theater", "chain"} and resolution.theater_ids:
+        found: list[_Row] = []
+        ids = resolution.theater_ids
+        for start in range(0, len(ids), _THEATER_SLOTS):
+            block = ids[start : start + _THEATER_SLOTS]
+            padded = [*block, *[""] * (_THEATER_SLOTS - len(block))]
+            # A window longer than the fixed slots is read in pages of that size.
+            for offset in range(0, max(len(window), 1), _DATE_SLOTS):
+                found.extend(
+                    _read_rows(
+                        db,
+                        _BY_THEATER,
+                        (
+                            stamp,
+                            *_pad_dates(window[offset : offset + _DATE_SLOTS]),
+                            flag,
+                            film,
+                            *padded,
+                        ),
+                    )
+                )
+        return found
+    if resolution.kind == "place" and resolution.lat is not None and resolution.lng is not None:
+        radius = resolution.radius_mi if resolution.radius_mi is not None else 1.0
+        miles = radius if radius >= 2 else 2.0
+        south, north, west, east = _mile_box(resolution.lat, resolution.lng, miles)
+        return _read_dated(db, _BY_BOX, stamp, window, (flag, film, south, north, west, east))
+    if resolution.kind == "borough" and resolution.borough and resolution.borough in BOROUGHS:
+        south, north, west, east = _borough_box(resolution.borough)
+        return _read_dated(
+            db,
+            _BY_BOROUGH,
+            stamp,
+            window,
+            (flag, film, south, north, west, east, resolution.borough),
+        )
+    return _read_dated(db, _BY_BOX, stamp, window, (flag, film, -90.0, 90.0, -180.0, 180.0))
+
+
+def _load_nearby(
+    db: Database, now: datetime, dates: list[str], lat: float, lng: float, miles: float
+) -> list[_Row]:
+    south, north, west, east = _mile_box(lat, lng, miles)
+    return _read_dated(
+        db,
+        _NEARBY,
+        now.astimezone(NY).isoformat(timespec="seconds"),
+        dates,
+        (south, north, west, east),
+    )
+
+
+def _load_movie_future(db: Database, now: datetime, movie_id: str) -> list[_Row]:
+    return _read_rows(
+        db,
+        _MOVIE_FUTURE,
+        (now.astimezone(NY).isoformat(timespec="seconds"), movie_id),
+    )
+
+
+def _read_dated(
+    db: Database,
+    sql: str,
+    stamp: str,
+    dates: list[str],
+    tail: tuple[object, ...],
+) -> list[_Row]:
+    found: list[_Row] = []
+    window = dates or [_EMPTY_DAY]
+    for offset in range(0, len(window), _DATE_SLOTS):
+        found.extend(
+            _read_rows(db, sql, (stamp, *_pad_dates(window[offset : offset + _DATE_SLOTS]), *tail))
+        )
+    return found
+
+
+def _read_rows(db: Database, sql: str, params: tuple[object, ...]) -> list[_Row]:
     parsed: list[_Row] = []
-    for row in db.query(sql):
+    for row in db.query(sql, params):
         starts = datetime.fromisoformat(str(row["starts_at"]))
         if starts.tzinfo is None:
             starts = starts.replace(tzinfo=NY)

@@ -63,7 +63,10 @@ def test_demo_ask_and_voice_socket(settings: Settings) -> None:
 
 def test_builder_bundle(settings: Settings) -> None:
     with _client(settings) as client:
-        bundle = client.get("/v1/builder/bundle").json()
+        bundle = client.get(
+            "/v1/builder/bundle",
+            headers={"X-MovieXFone-Secret": "test-secret"},
+        ).json()
         names = [tool["name"] for tool in bundle["tools"]]
         assert names == ["search_showtimes", "get_movie_info", "end_call"]
         assert "web_search" not in bundle["prompt"]

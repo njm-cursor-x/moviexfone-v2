@@ -238,7 +238,11 @@ def _movie(text: str, titles: list[tuple[str, list[str]]]) -> tuple[str | None, 
 
 
 def _location(text: str) -> str | None:
-    tokens = [token for token in text.split() if token not in _FILLER and not token.isdigit()]
+    tokens = [
+        token
+        for token in text.split()
+        if token not in _FILLER and (not token.isdigit() or len(token) == 5)
+    ]
     if not tokens:
         return None
     return " ".join(tokens)

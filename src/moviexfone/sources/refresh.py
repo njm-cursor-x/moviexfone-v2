@@ -22,7 +22,7 @@ from datetime import datetime, timedelta
 from moviexfone.catalog import _apply, record_ingest
 from moviexfone.db import Database
 from moviexfone.http import AllowedClient
-from moviexfone.sources.fetch import ALL_CITIES, fetch_assemble_city, lookup_film_id
+from moviexfone.sources.fetch import ALL_CITIES, CITY_SLUGS, fetch_assemble_city, lookup_film_id
 from moviexfone.sources.fetch import _client as assemble_client
 from moviexfone.sources.parse import IncomingShow, parse_assemble
 from moviexfone.timeutil import NY, now_ny
@@ -115,6 +115,7 @@ def refresh_assemble(
     total = 0
     errors: list[str] = []
     fetched = False
+    city_failed = False
     started = datetime.now(NY)
     movies = db.query("SELECT movie_id, title, tmdb_id FROM movie")
     try:
@@ -157,6 +158,7 @@ def refresh_assemble(
 
                 remember_film_ids(db)
             collected: list[IncomingShow] = []
+            failed_slugs: set[str] = set()
             for slug in ALL_CITIES:
                 limiter.wait()
                 try:
@@ -165,34 +167,55 @@ def refresh_assemble(
                     )
                 except Exception as exc:
                     errors.append(type(exc).__name__)
+                    failed_slugs.add(slug)
                     log.warning("assemble refresh failed: %s", type(exc).__name__)
                     continue
                 collected.extend(parse_assemble(payload, title=title))
             with db.transaction():
-                # This film's listings replace its previous Assemble rows, including
-                # theaters it left. Other films at those theaters stay. An empty
-                # fetch does not delete, so a failed or blank response keeps the
-                # last rows. Deleting the whole theater would drop those films:
-                # one film payload is not the theater's Assemble board.
-                if collected:
+                # A 200 replaces this film's Assemble rows in the boroughs that
+                # answered, including theaters it left. A non-200 city is not an
+                # empty listing: those boroughs keep their previous rows, and the
+                # film is not marked checked. An all-200 body with no screenings
+                # still does not delete. Other films at those theaters stay.
+                if failed_slugs:
+                    city_failed = True
+                    succeeded = [
+                        borough
+                        for borough, slugs in CITY_SLUGS.items()
+                        if not any(slug in failed_slugs for slug in slugs)
+                    ]
+                    if succeeded:
+                        # Five boroughs, so the statement stays a fixed parameterized query.
+                        padded = [*succeeded, "", "", "", "", ""][:5]
+                        db.execute(
+                            """DELETE FROM showtime
+                                WHERE source = 'assemble' AND movie_id = ?
+                                  AND theater_id IN (
+                                      SELECT theater_id FROM theater
+                                      WHERE borough IN (?, ?, ?, ?, ?)
+                                  )""",
+                            (movie_id, *padded),
+                        )
+                elif collected:
                     db.execute(
                         "DELETE FROM showtime WHERE source = 'assemble' AND movie_id = ?",
                         (movie_id,),
                     )
                 total += _apply(db, collected, mode="insert", now=now)
-            fetched = True
-            db.execute(
-                "INSERT OR REPLACE INTO assemble_status (movie_id, checked_at) VALUES (?, ?)",
-                (movie_id, started.isoformat()),
-            )
+            if not failed_slugs:
+                fetched = True
+                db.execute(
+                    "INSERT OR REPLACE INTO assemble_status (movie_id, checked_at) VALUES (?, ?)",
+                    (movie_id, started.isoformat()),
+                )
         if fetched or errors:
             record_ingest(
                 db,
                 source="assemble",
                 now=now,
-                ok=not errors or total > 0,
+                ok=False if city_failed else (not errors or total > 0),
                 showtimes=total,
-                error=errors[0] if errors and total == 0 else None,
+                error=errors[0] if errors and (city_failed or total == 0) else None,
                 started=started,
                 finished=datetime.now(NY),
             )

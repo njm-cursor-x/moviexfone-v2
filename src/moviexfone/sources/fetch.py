@@ -16,6 +16,16 @@ from moviexfone.sources.parse import IncomingShow, parse_alamo, parse_assemble, 
 
 log = logging.getLogger(__name__)
 
+
+class AssembleCityError(Exception):
+    """The city request was not a 200. An empty body would be a real empty listing."""
+
+    def __init__(self, city_slug: str, status: int) -> None:
+        self.city_slug = city_slug
+        self.status = status
+        super().__init__(f"assemble status={status} city={city_slug}")
+
+
 ALAMO_URL = "https://drafthouse.com/s/mother/v2/schedule/market/nyc"
 ASSEMBLE_MCP = "https://api.assemble.film/mcp"
 NITEHAWK_URLS = {
@@ -141,7 +151,7 @@ def fetch_assemble_city(
             response = http.get(url, params={"city": city_slug}, max_bytes=2_000_000)
         if response.status_code != 200:
             log.info("assemble status=%s city=%s", response.status_code, city_slug)
-            return {}
+            raise AssembleCityError(city_slug, response.status_code)
         payload = response.json()
         return payload if isinstance(payload, dict) else {}
     finally:

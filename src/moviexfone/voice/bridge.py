@@ -566,7 +566,7 @@ def _session_body(db: Database) -> dict[str, Any]:
 
     titles = [
         sanitize_display(str(row["title"]), limit=50)
-        for row in db.query("SELECT title FROM movie ORDER BY title")
+        for row in db.query("SELECT title FROM movie ORDER BY title LIMIT 100")
     ]
     theaters = [
         sanitize_display(str(row["spoken_name"]), limit=50)
@@ -594,7 +594,7 @@ def _session_body(db: Database) -> dict[str, Any]:
 
 def _coerce_search(args: dict[str, Any]) -> dict[str, Any]:
     data = dict(args)
-    allowed = {"any", "35mm", "imax", "70mm", "open_caption"}
+    allowed = {"any", "35mm", "imax", "70mm", "open_caption", "dolby", "3d"}
     if data.get("format") not in allowed:
         data["format"] = "any"
     page = data.get("page", 1)

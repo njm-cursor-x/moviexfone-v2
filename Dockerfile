@@ -15,5 +15,5 @@ USER app
 ENV MOVIEXFONE_BIND=0.0.0.0
 ENV MOVIEXFONE_DB=/app/var/moviexfone.db
 EXPOSE 8000
-HEALTHCHECK CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+HEALTHCHECK CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"]
 CMD ["python", "-m", "moviexfone"]

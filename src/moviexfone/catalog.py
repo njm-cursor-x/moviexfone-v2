@@ -668,14 +668,17 @@ def _show_count(db: Database) -> int:
 
 
 def load_theater_refs(db: Database) -> list[TheaterRef]:
+    # Resolution has to see every theater, so this registry read is not limited.
+    # Aliases are one query instead of one round trip per theater.
     refs: list[TheaterRef] = []
-    for row in db.query("SELECT * FROM theater"):
-        aliases = [
-            str(item["alias"])
-            for item in db.query(
-                "SELECT alias FROM theater_alias WHERE theater_id = ?", (row["theater_id"],)
-            )
-        ]
+    aliases: dict[str, list[str]] = {}
+    for item in db.query("SELECT theater_id, alias FROM theater_alias"):
+        aliases.setdefault(str(item["theater_id"]), []).append(str(item["alias"]))
+    for row in db.query(
+        """SELECT theater_id, name, spoken_name, operator, borough, lat, lng,
+                  website, status, covered
+           FROM theater"""
+    ):
         refs.append(
             TheaterRef(
                 theater_id=str(row["theater_id"]),
@@ -688,7 +691,7 @@ def load_theater_refs(db: Database) -> list[TheaterRef]:
                 website=row["website"],
                 status=str(row["status"]),
                 covered=bool(row["covered"]),
-                aliases=aliases,
+                aliases=aliases.get(str(row["theater_id"]), []),
             )
         )
     return refs

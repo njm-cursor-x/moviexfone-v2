@@ -98,7 +98,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.middleware("http")
     async def basic_gate(request: Request, call_next: Any) -> Response:
         path = request.url.path
-        gated = path in {"/", "/v1/voice/ticket", "/health/data"} or path.startswith("/static")
+        gated = path in {
+            "/",
+            "/v1/voice/ticket",
+            "/health/data",
+            "/v1/builder/bundle",
+        } or path.startswith("/static")
         if (
             gated
             and settings.basic_user
@@ -250,7 +255,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return end_call()
 
     @app.get("/v1/builder/bundle")
-    def builder_bundle() -> dict[str, Any]:
+    def builder_bundle(_: None = Depends(guarded)) -> dict[str, Any]:
         now = now_ny()
         return {
             "prompt": system_prompt(now),

@@ -14,7 +14,7 @@ pip install --no-deps -e .
 python -m moviexfone
 ```
 
-The lockfile installs on CPython 3.12. For tests, `pip install -e ".[dev]"` adds pytest (including pytest-asyncio), ruff, and mypy.
+The runtime lockfile installs on CPython 3.12. Tests and linters install from `requirements-dev.lock` with `--require-hashes`, then `pip install --no-deps --no-build-isolation -e .`.
 
 Open http://127.0.0.1:8000. Type a question, or use the mic where the browser allows it. With no API key the page is a **demo voice**: your browser speaks the `speak` line our server already trimmed. Showtimes still come from the real query layer. Live xAI voice is the other path: see `docs/DEMO.md`. The page mints a one-minute ticket and connects with `?ticket=`.
 
