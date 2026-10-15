@@ -13,6 +13,8 @@ import re
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from moviexfone.sanitize import sanitize_display
+
 Executor = Callable[[str, dict[str, Any]], Awaitable[dict[str, Any]]]
 Sender = Callable[[dict[str, Any]], Awaitable[None]]
 
@@ -157,6 +159,9 @@ class ToolLoop:
             results = [(call_id, LIMIT_RESULT) for call_id, _name, _args in batch]
         else:
             results = await self._run(batch)
+        for _call_id, result in results:
+            if isinstance(result, dict) and result.get("speak"):
+                result["speak"] = sanitize_display(str(result["speak"]), limit=500)
         messages = [_output_message(call_id, result) for call_id, result in results]
         if had_audio and self.wait_playback is not None:
             await self.wait_playback()
@@ -181,8 +186,10 @@ class ToolLoop:
             if isinstance(result, dict) and result.get("speak")
         ]
         if speaks and self.rounds <= self.max_rounds:
-            messages.append(_force(" ".join(speaks)[:500]))
-            return messages
+            spoken = sanitize_display(" ".join(speaks), limit=500)
+            if spoken:
+                messages.append(_force(spoken))
+                return messages
         if self.rounds > self.max_rounds:
             messages.append({"type": "response.create", "response": {"tool_choice": "none"}})
         else:

@@ -44,6 +44,7 @@ _TICKET_HOSTS = (
 _BEARER = re.compile(r"Bearer\s+[A-Za-z0-9\-._~+/=]{6,}", re.IGNORECASE)
 _XAI_KEY = re.compile(r"xai-[A-Za-z0-9_\-]{8,}")
 _CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+_URL = re.compile(r"(?:https?://|www\.)[^\s<>\"']+", re.IGNORECASE)
 
 
 def sanitize_display(text: str | None, *, limit: int = 180) -> str:
@@ -54,6 +55,7 @@ def sanitize_display(text: str | None, *, limit: int = 180) -> str:
     cleaned = _CONTROL.sub(" ", cleaned)
     cleaned = re.sub(r"<\s*script\b[^>]*>.*?</\s*script\s*>", " ", cleaned, flags=re.I | re.S)
     cleaned = re.sub(r"<[^>]*>", " ", cleaned)
+    cleaned = _URL.sub(" ", cleaned)
     kept = [
         part.strip()
         for part in re.split(r"(?<=[.!?])\s+", cleaned)
