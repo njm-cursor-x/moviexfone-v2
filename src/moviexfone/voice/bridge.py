@@ -1,0 +1,700 @@
+"""WebSocket bridge between the browser and xAI realtime, plus a mock mode."""
+
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import json
+import logging
+import threading
+import time
+from collections.abc import Awaitable, Callable
+from typing import Any
+
+from fastapi import WebSocket, WebSocketDisconnect
+
+from moviexfone.api.security import voice_connection_allowed
+from moviexfone.config import Settings
+from moviexfone.db import Database
+from moviexfone.service import ask
+from moviexfone.sources.fetch import geosearch
+from moviexfone.timeutil import now_ny, resolve_when
+from moviexfone.voice.loop import ToolLoop
+from moviexfone.voice.prompt import GREETING, system_prompt
+from moviexfone.voice.schemas import tool_schemas
+
+log = logging.getLogger(__name__)
+
+_UPSTREAM_SLOTS = threading.BoundedSemaphore(1)
+_MAX_UPSTREAM_BYTES = 1_048_576
+_MAX_FRAME_CHARS = 65_536
+_MAX_SESSION_CHARS = 8_000_000
+
+
+async def handle_voice_socket(
+    websocket: WebSocket,
+    settings: Settings,
+    db: Database,
+    refresher: Any | None = None,
+    tickets: Any | None = None,
+    sessions: Any | None = None,
+    client_host: str | None = None,
+) -> None:
+    await websocket.accept()
+    host = websocket.client.host if websocket.client else None
+    ticket = websocket.query_params.get("ticket") or websocket.query_params.get("token")
+    allowed, reason = voice_connection_allowed(
+        origin=websocket.headers.get("origin"),
+        host=host,
+        token=ticket,
+        allowed_origins=settings.cors_origins,
+        secret=settings.tool_secret,
+        live=settings.live_voice,
+        tickets=tickets,
+    )
+    if not allowed:
+        await websocket.send_json({"type": "error", "message": reason or "not authorized"})
+        await websocket.close(code=1008)
+        return
+    if sessions is not None:
+        sessions.commit(client_host or host)
+    if settings.voice_mode == "live":
+        try:
+            await asyncio.wait_for(
+                _run_live(websocket, settings, db, refresher),
+                timeout=settings.max_session_seconds + 30,
+            )
+            return
+        except TimeoutError:
+            log.warning("voice session exceeded its hard cap")
+            with contextlib.suppress(Exception):
+                await asyncio.wait_for(
+                    websocket.send_json({"type": "error", "message": "Sorry, I lost the line."}),
+                    timeout=2,
+                )
+            with contextlib.suppress(Exception):
+                await asyncio.wait_for(websocket.close(code=1011), timeout=2)
+            return
+        except WebSocketDisconnect:
+            return
+        except Exception:
+            log.warning("live voice failed; using mock mode")
+            try:
+                await websocket.send_json(
+                    {
+                        "type": "notice",
+                        "message": "Live voice is unavailable. This browser will read the answer itself.",
+                    }
+                )
+            except Exception:
+                return
+    try:
+        await _run_mock(websocket, db)
+    except WebSocketDisconnect:
+        return
+
+
+def _geocode(text: str) -> dict[str, Any] | None:
+    try:
+        return geosearch(text)
+    except Exception as exc:
+        log.info("geosearch failed: %s", type(exc).__name__)
+        return None
+
+
+async def _run_mock(websocket: WebSocket, db: Database) -> None:
+    from starlette.websockets import WebSocketDisconnect
+
+    await websocket.send_json({"type": "session.ready", "mode": "mock", "greeting": GREETING})
+    try:
+        while True:
+            message = await websocket.receive_json()
+            kind = message.get("type")
+            if kind == "text":
+                text = str(message.get("text") or "")[:400]
+                payload = ask(db, text, now=now_ny())
+                await websocket.send_json({"type": "transcript", "role": "user", "text": text})
+                await websocket.send_json(
+                    {
+                        "type": "transcript",
+                        "role": "assistant",
+                        "text": str(payload.get("speak") or ""),
+                    }
+                )
+                await websocket.send_json({"type": "showtimes", "payload": payload})
+            elif kind == "close":
+                await websocket.close()
+                return
+    except WebSocketDisconnect:
+        return
+
+
+def _session_budget(seconds: int) -> int:
+    return int(max(60, seconds) * 64_000 * 1.2)
+
+
+def _resets_upstream_watch(kind: str | None) -> bool:
+    """Keepalive pings must not hide a stalled reply."""
+    return kind in {
+        "response.created",
+        "response.output_audio.delta",
+        "response.output_audio_transcript.delta",
+        "response.done",
+        "response.function_call_arguments.delta",
+        "response.function_call_arguments.done",
+        "input_audio_buffer.speech_started",
+        "input_audio_buffer.speech_stopped",
+        "input_audio_buffer.committed",
+        "conversation.item.input_audio_transcription.completed",
+        "error",
+    }
+
+
+def _force_message(text: str) -> dict[str, Any]:
+    return {
+        "type": "conversation.item.create",
+        "item": {
+            "type": "force_message",
+            "role": "assistant",
+            "interruptible": True,
+            "content": [{"type": "output_text", "text": text}],
+        },
+    }
+
+
+def _expects_reply(item: dict[str, Any]) -> bool:
+    if item.get("type") == "response.create":
+        return True
+    output = item.get("item")
+    return isinstance(output, dict) and output.get("type") == "function_call_output"
+
+
+def _is_goodbye(item: dict[str, Any]) -> bool:
+    output = item.get("item")
+    if not isinstance(output, dict) or output.get("type") != "force_message":
+        return False
+    content = output.get("content")
+    if not isinstance(content, list):
+        return False
+    return any(isinstance(part, dict) and part.get("text") == "Enjoy the show." for part in content)
+
+
+def upstream_is_quiet(last_event: float, now: float, *, expecting: bool, quiet_s: float) -> bool:
+    """True when a reply was expected and the upstream has gone silent."""
+    return expecting and now - last_event >= quiet_s
+
+
+async def await_io(awaitable: Awaitable[Any], timeout: float) -> Any:
+    """Bound a socket read or write so a stalled peer cannot hold the line."""
+    return await asyncio.wait_for(awaitable, timeout)
+
+
+def abort_socket(sock: Any) -> None:
+    transport = getattr(sock, "transport", None)
+    abort = getattr(transport, "abort", None) if transport is not None else None
+    if callable(abort):
+        abort()
+
+
+async def _run_live(
+    websocket: WebSocket,
+    settings: Settings,
+    db: Database,
+    refresher: Any | None = None,
+    *,
+    io_timeout: float = 10,
+    quiet_s: float = 20,
+    silence_after: float = 40,
+) -> None:
+    import websockets
+
+    if not settings.xai_api_key:
+        raise RuntimeError("missing key")
+    if not _UPSTREAM_SLOTS.acquire(blocking=False):
+        await websocket.send_json({"type": "error", "message": "The line is busy. Try again soon."})
+        await websocket.close(code=1013)
+        return
+    url = f"wss://api.x.ai/v1/realtime?model={settings.xai_model}"
+    headers = {"Authorization": f"Bearer {settings.xai_api_key}"}
+    held = True
+
+    def release_slot() -> None:
+        nonlocal held
+        if held:
+            _UPSTREAM_SLOTS.release()
+            held = False
+
+    try:
+        async with websockets.connect(
+            url,
+            additional_headers=headers,
+            max_size=_MAX_UPSTREAM_BYTES,
+            open_timeout=20,
+            close_timeout=1,
+        ) as upstream:
+            await await_io(
+                upstream.send(
+                    json.dumps(
+                        {
+                            "type": "session.update",
+                            "session": _session_body(db),
+                        }
+                    )
+                ),
+                io_timeout,
+            )
+            try:
+                async with asyncio.timeout(10):
+                    while True:
+                        raw = await upstream.recv()
+                        if isinstance(raw, bytes):
+                            continue
+                        event = json.loads(raw)
+                        if event.get("type") == "session.updated":
+                            break
+                        if event.get("type") == "error":
+                            raise RuntimeError("session update was rejected")
+            except TimeoutError:
+                await websocket.send_json(
+                    {"type": "error", "message": "The voice service did not answer."}
+                )
+                await websocket.close(code=1011)
+                return
+            await await_io(
+                upstream.send(
+                    json.dumps(
+                        {
+                            "type": "conversation.item.create",
+                            "item": {
+                                "type": "force_message",
+                                "role": "assistant",
+                                "interruptible": True,
+                                "content": [{"type": "output_text", "text": GREETING}],
+                            },
+                        }
+                    )
+                ),
+                io_timeout,
+            )
+            await websocket.send_json(
+                {"type": "session.ready", "mode": "live", "greeting": GREETING}
+            )
+            last_sound = time.monotonic()
+            last_upstream = time.monotonic()
+            silence_prompted = False
+            expecting = False
+            alive_since_turn = False
+            nudged = False
+            goodbye_fallback: asyncio.Task[None] | None = None
+
+            def begin_wait() -> None:
+                """A new turn. Pings and this opening event do not prove the line is up."""
+                nonlocal expecting, alive_since_turn, nudged
+                expecting = True
+                alive_since_turn = False
+                nudged = False
+
+            def note_alive(kind: str | None) -> None:
+                nonlocal alive_since_turn
+                if kind in {"ping", "pong"} or not expecting:
+                    return
+                alive_since_turn = True
+
+            def note_speech() -> None:
+                """Mic frames arrive continuously. Only real speech resets the prompt."""
+                nonlocal last_sound
+                last_sound = time.monotonic()
+
+            def note_upstream() -> None:
+                nonlocal last_upstream
+                last_upstream = time.monotonic()
+
+            async def send_upstream(payload: str) -> None:
+                await await_io(upstream.send(payload), io_timeout)
+
+            loop = ToolLoop(
+                lambda name, args: _execute(
+                    db, name, args, live_data=settings.live_data, refresher=refresher
+                ),
+                send=_send_upstream(upstream, timeout=io_timeout),
+            )
+
+            async def client_to_upstream() -> None:
+                nonlocal expecting
+                received = 0
+                while True:
+                    message = await websocket.receive_json()
+                    kind = message.get("type")
+                    if kind == "audio":
+                        data = message.get("data") or ""
+                        if not isinstance(data, str) or len(data) > _MAX_FRAME_CHARS:
+                            await websocket.close(code=1009)
+                            return
+                        received += len(data)
+                        if received > _session_budget(settings.max_session_seconds):
+                            await websocket.send_json(
+                                {
+                                    "type": "error",
+                                    "message": "This call has reached its length.",
+                                }
+                            )
+                            await websocket.close(code=1000)
+                            return
+                        await send_upstream(
+                            json.dumps(
+                                {
+                                    "type": "input_audio_buffer.append",
+                                    "audio": message.get("data") or "",
+                                }
+                            )
+                        )
+                    elif kind == "text":
+                        begin_wait()
+                        await send_upstream(
+                            json.dumps(
+                                {
+                                    "type": "conversation.item.create",
+                                    "item": {
+                                        "type": "message",
+                                        "role": "user",
+                                        "content": [
+                                            {
+                                                "type": "input_text",
+                                                "text": str(message.get("text") or "")[:400],
+                                            }
+                                        ],
+                                    },
+                                }
+                            )
+                        )
+                        await send_upstream(json.dumps({"type": "response.create"}))
+                    elif kind == "close":
+                        return
+
+            async def upstream_to_client() -> None:
+                nonlocal expecting, goodbye_fallback
+                async for raw in upstream:
+                    if isinstance(raw, bytes):
+                        continue
+                    event = json.loads(raw)
+                    kind = event.get("type")
+                    if _resets_upstream_watch(kind):
+                        note_upstream()
+                    if kind in {
+                        "input_audio_buffer.speech_stopped",
+                        "input_audio_buffer.committed",
+                    }:
+                        begin_wait()
+                    else:
+                        note_alive(str(kind) if kind is not None else None)
+                    if kind in {"response.done", "error"}:
+                        expecting = False
+                    if kind in {"response.output_audio.delta", "input_audio_buffer.speech_started"}:
+                        note_speech()
+                    for outbound_event in _client_events(event):
+                        await websocket.send_json(outbound_event)
+                    if kind == "conversation.item.input_audio_transcription.completed":
+                        await websocket.send_json(
+                            {
+                                "type": "transcript",
+                                "role": "user",
+                                "text": event.get("transcript") or "",
+                            }
+                        )
+                    elif kind == "response.done":
+                        await websocket.send_json({"type": "transcript.done", "role": "assistant"})
+                    elif kind == "error":
+                        detail = json.dumps(event)
+                        if "no active response" in detail.lower():
+                            log.info("ignored cancel with no active response")
+                        else:
+                            await websocket.send_json(
+                                {"type": "error", "message": "The voice service returned an error."}
+                            )
+                            log.warning("realtime error type=%s", kind)
+                    outbound = await loop.handle_server_event(event)
+                    for item in outbound:
+                        if item.get("type") == "call.end":
+                            if goodbye_fallback is not None:
+                                goodbye_fallback.cancel()
+                            await websocket.send_json({"type": "call.ended"})
+                            await websocket.close(code=1000)
+                            return
+                        await send_upstream(json.dumps(item))
+                        if _expects_reply(item):
+                            begin_wait()
+                            note_upstream()
+                        if _is_goodbye(item):
+                            await websocket.send_json(
+                                {
+                                    "type": "transcript",
+                                    "role": "assistant",
+                                    "text": "Enjoy the show.",
+                                }
+                            )
+
+                            async def speak_if_still_open() -> None:
+                                await asyncio.sleep(4)
+                                with contextlib.suppress(Exception):
+                                    await websocket.send_json(
+                                        {"type": "goodbye", "text": "Enjoy the show."}
+                                    )
+                                    await websocket.close(code=1000)
+
+                            if goodbye_fallback is None:
+                                goodbye_fallback = asyncio.create_task(speak_if_still_open())
+                        output = item.get("item")
+                        if (
+                            isinstance(output, dict)
+                            and output.get("type") == "function_call_output"
+                        ):
+                            try:
+                                payload = json.loads(str(output.get("output") or "{}"))
+                            except json.JSONDecodeError:
+                                payload = {}
+                            if isinstance(payload, dict) and payload.get("speak"):
+                                await websocket.send_json({"type": "showtimes", "payload": payload})
+
+            async def silence_once() -> None:
+                nonlocal silence_prompted
+                while not silence_prompted:
+                    await asyncio.sleep(min(1.0, max(0.05, silence_after / 8)))
+                    if time.monotonic() - last_sound < silence_after:
+                        continue
+                    silence_prompted = True
+                    await send_upstream(
+                        json.dumps(
+                            {
+                                "type": "conversation.item.create",
+                                "item": {
+                                    "type": "force_message",
+                                    "role": "assistant",
+                                    "interruptible": True,
+                                    "content": [{"type": "output_text", "text": "Anything else?"}],
+                                },
+                            }
+                        )
+                    )
+                # Stay alive. Returning would look like the call ended.
+                await asyncio.Event().wait()
+
+            async def watchdog() -> str:
+                nonlocal nudged
+                cap_at = time.monotonic() + settings.max_session_seconds
+                while True:
+                    await asyncio.sleep(min(1.0, quiet_s))
+                    now = time.monotonic()
+                    if now >= cap_at:
+                        return "cap"
+                    if not upstream_is_quiet(
+                        last_upstream, now, expecting=expecting, quiet_s=quiet_s
+                    ):
+                        continue
+                    # A dead socket never hears a nudge. Hang up on the first trip.
+                    if not alive_since_turn:
+                        return "quiet"
+                    if not nudged:
+                        nudged = True
+                        note_upstream()
+                        try:
+                            await send_upstream(
+                                json.dumps(_force_message("Sorry, I didn't catch that"))
+                            )
+                        except Exception:
+                            return "quiet"
+                        continue
+                    return "quiet"
+
+            client_task = asyncio.create_task(client_to_upstream())
+            upstream_task = asyncio.create_task(upstream_to_client())
+            silence_task = asyncio.create_task(silence_once())
+            watch_task = asyncio.create_task(watchdog())
+            # The silence prompt must not end the call when it finishes speaking.
+            ending = (client_task, upstream_task, watch_task)
+            try:
+                done, _pending = await asyncio.wait(
+                    set(ending), return_when=asyncio.FIRST_COMPLETED
+                )
+                reason = "cap" if watch_task in done and watch_task.result() == "cap" else ""
+                quiet = watch_task in done and watch_task.result() == "quiet"
+
+                def _failed(task: asyncio.Task[Any]) -> bool:
+                    if task not in done:
+                        return False
+                    return task.exception() is not None
+
+                stalled = (
+                    quiet
+                    or _failed(upstream_task)
+                    or (client_task in done and isinstance(client_task.exception(), TimeoutError))
+                )
+                if stalled or reason == "cap":
+                    abort_socket(upstream)
+                    note = (
+                        "Sorry, I lost the line."
+                        if stalled
+                        else "This call has reached its time limit."
+                    )
+                    with contextlib.suppress(Exception):
+                        await await_io(
+                            websocket.send_json({"type": "error", "message": note}),
+                            min(2, io_timeout),
+                        )
+                    with contextlib.suppress(Exception):
+                        await await_io(websocket.close(code=1011 if stalled else 1000), 2)
+            finally:
+                # Free the line before waiting on pumps that may still be blocked.
+                release_slot()
+                abort_socket(upstream)
+                if goodbye_fallback is not None:
+                    goodbye_fallback.cancel()
+                for task in (*ending, silence_task):
+                    task.cancel()
+                with contextlib.suppress(Exception):
+                    await asyncio.wait_for(
+                        asyncio.gather(*ending, silence_task, return_exceptions=True),
+                        timeout=2,
+                    )
+                with contextlib.suppress(Exception):
+                    await asyncio.wait_for(upstream.close(), timeout=1)
+    finally:
+        release_slot()
+
+
+def _session_body(db: Database) -> dict[str, Any]:
+    from moviexfone.sanitize import sanitize_display
+
+    titles = [
+        sanitize_display(str(row["title"]), limit=50)
+        for row in db.query("SELECT title FROM movie ORDER BY title LIMIT 100")
+    ]
+    theaters = [
+        sanitize_display(str(row["spoken_name"]), limit=50)
+        for row in db.query(
+            "SELECT spoken_name FROM theater WHERE status = 'open' ORDER BY spoken_name LIMIT 40"
+        )
+    ]
+    keyterms = [term for term in [*titles, *theaters] if term][:100]
+    return {
+        "voice": "rex",
+        "instructions": system_prompt(now_ny()),
+        "turn_detection": {"type": "server_vad"},
+        "reasoning": {"effort": "none"},
+        "tools": tool_schemas(),
+        "replace": {"Nitehawk": "Night hawk", "IMAX": "eye max"},
+        "audio": {
+            "input": {
+                "format": {"type": "audio/pcm", "rate": 24000},
+                "transcription": {"keyterms": keyterms},
+            },
+            "output": {"format": {"type": "audio/pcm", "rate": 24000}, "speed": 1.15},
+        },
+    }
+
+
+def _coerce_search(args: dict[str, Any]) -> dict[str, Any]:
+    data = dict(args)
+    allowed = {"any", "35mm", "imax", "70mm", "open_caption", "dolby", "3d"}
+    if data.get("format") not in allowed:
+        data["format"] = "any"
+    page = data.get("page", 1)
+    if isinstance(page, bool) or not isinstance(page, int) or page < 1 or page > 10:
+        data["page"] = 1
+    location = data.get("location")
+    if isinstance(location, str) and len(location) > 120:
+        data["location"] = None
+        data["_location_too_long"] = True
+    return data
+
+
+async def _execute(
+    db: Database,
+    name: str,
+    args: dict[str, Any],
+    *,
+    live_data: bool = False,
+    refresher: Any | None = None,
+) -> dict[str, Any]:
+    from pydantic import ValidationError
+
+    from moviexfone.api.models import MovieIn, SearchIn
+    from moviexfone.query import end_call, get_movie_info, search_showtimes
+
+    now = now_ny()
+    if name == "end_call":
+        return end_call()
+    if name == "get_movie_info":
+        try:
+            movie = MovieIn.model_validate(args).movie
+        except ValidationError:
+            return {"error": "movie_not_found", "speak": "Which movie?", "did_you_mean": []}
+        return get_movie_info(db, movie)
+    if name == "search_showtimes":
+        raw = _coerce_search(args)
+        if raw.pop("_location_too_long", False):
+            return {
+                "error": "location_not_found",
+                "speak": "Which neighborhood or theater?",
+            }
+        try:
+            body = SearchIn.model_validate(raw)
+        except ValidationError:
+            return {
+                "error": "date_unclear",
+                "speak": "Which day do you mean?",
+                "note": "The arguments were not usable. Ask one short question.",
+            }
+        window = resolve_when(body.date, now)
+        dates, spoken, unclear = window.dates, window.spoken, window.unclear
+        after = body.after_time or (
+            window.after.strftime("%H:%M") if window.after is not None else None
+        )
+        before = body.before_time or (
+            window.before.strftime("%H:%M") if window.before is not None else None
+        )
+        if refresher is not None and body.movie:
+            refresher.consider(body.movie)
+        if not body.location:
+            return {"error": "location_not_found", "speak": "Which neighborhood or theater?"}
+        return search_showtimes(
+            db,
+            location=body.location,
+            movie=body.movie,
+            dates=dates,
+            after_time=after,
+            before_time=before,
+            format_name=body.format,
+            page=body.page,
+            now=now,
+            date_spoken=spoken,
+            geocode=_geocode if live_data else None,
+            date_unclear=unclear,
+        )
+    return {"error": "unknown_tool", "note": "Answer with what you have."}
+
+
+def _client_events(event: dict[str, Any]) -> list[dict[str, Any]]:
+    """Map one realtime event onto browser messages. Audio is not dropped."""
+    kind = event.get("type")
+    if kind == "response.output_audio.delta":
+        return [{"type": "audio", "data": event.get("delta") or ""}]
+    if kind == "response.output_audio_transcript.delta":
+        return [
+            {
+                "type": "transcript.delta",
+                "role": "assistant",
+                "text": event.get("delta") or "",
+            }
+        ]
+    if kind == "input_audio_buffer.speech_started":
+        return [{"type": "speech_started"}]
+    return []
+
+
+def _send_upstream(
+    upstream: Any, *, timeout: float = 10
+) -> Callable[[dict[str, Any]], Awaitable[None]]:
+    async def send(message: dict[str, Any]) -> None:
+        await await_io(upstream.send(json.dumps(message)), timeout)
+
+    return send

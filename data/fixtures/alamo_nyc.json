@@ -1,0 +1,43 @@
+{
+  "_meta": {
+    "synthetic": true,
+    "built": "2026-10-13",
+    "reason": "Live drafthouse.com was blocked by this environment's egress (TLS syscall). Times are illustrative, shaped like the public NYC market feed, not a capture."
+  },
+  "data": {
+    "market": [
+      {
+        "id": "nyc",
+        "cinemas": [
+          {"id": "2101", "name": "Lower Manhattan", "latitude": 40.7079, "longitude": -74.0088},
+          {"id": "2103", "name": "Downtown Brooklyn", "latitude": 40.6906, "longitude": -73.9825},
+          {"id": "2106", "name": "Staten Island", "latitude": 40.5665, "longitude": -74.1105}
+        ]
+      }
+    ],
+    "presentations": [
+      {"slug": "verity", "show": {"title": "Verity"}},
+      {"slug": "the-social-reckoning", "show": {"title": "The Social Reckoning"}},
+      {"slug": "other-mommy", "show": {"title": "Other Mommy"}},
+      {"slug": "primetime", "show": {"title": "Primetime"}},
+      {"slug": "night-bus", "show": {"title": "Night Bus"}}
+    ],
+    "sessions": [
+      {"cinemaId": "2101", "presentationSlug": "verity", "showTimeClt": "2026-10-13T19:00:00", "showTimeUtc": "2026-10-13T23:00:00Z", "businessDateClt": "2026-10-13", "status": "ONSALE", "formatSlug": "2d-digital", "sessionId": "10001"},
+      {"cinemaId": "2101", "presentationSlug": "verity", "showTimeClt": "2026-10-13T15:00:00", "businessDateClt": "2026-10-13", "status": "SOLDOUT", "formatSlug": "2d-digital", "sessionId": "10002"},
+      {"cinemaId": "2101", "presentationSlug": "verity", "showTimeClt": "2026-10-12T19:00:00", "businessDateClt": "2026-10-12", "status": "PAST", "formatSlug": "2d-digital", "sessionId": "10003"},
+      {"cinemaId": "2101", "presentationSlug": "the-social-reckoning", "showTimeClt": "2026-10-13T18:30:00", "businessDateClt": "2026-10-13", "status": "ONSALE", "formatSlug": "2d-digital", "sessionId": "10004"},
+      {"cinemaId": "2101", "presentationSlug": "the-social-reckoning", "showTimeClt": "2026-10-13T21:30:00", "businessDateClt": "2026-10-13", "status": "ONSALE", "formatSlug": "2d-digital", "sessionId": "10005"},
+      {"cinemaId": "2101", "presentationSlug": "night-bus", "showTimeClt": "2026-10-17T13:00:00", "businessDateClt": "2026-10-17", "status": "ONSALE", "formatSlug": "35mm", "sessionId": "10006"},
+      {"cinemaId": "2103", "presentationSlug": "other-mommy", "showTimeClt": "2026-10-13T19:15:00", "businessDateClt": "2026-10-13", "status": "ONSALE", "formatSlug": "2d-digital", "sessionId": "98944"},
+      {"cinemaId": "2103", "presentationSlug": "other-mommy", "showTimeClt": "2026-10-13T21:45:00", "businessDateClt": "2026-10-13", "status": "ONSALE", "formatSlug": "2d-digital", "sessionId": "98945"},
+      {"cinemaId": "2103", "presentationSlug": "verity", "showTimeClt": "2026-10-13T19:15:00", "businessDateClt": "2026-10-13", "status": "ONSALE", "formatSlug": "2d-digital", "sessionId": "98950"},
+      {"cinemaId": "2103", "presentationSlug": "verity", "showTimeClt": "2026-10-13T21:30:00", "businessDateClt": "2026-10-13", "status": "ONSALE", "formatSlug": "2d-digital", "sessionId": "98951"},
+      {"cinemaId": "2103", "presentationSlug": "night-bus", "showTimeClt": "2026-10-17T16:20:00", "businessDateClt": "2026-10-17", "status": "ONSALE", "formatSlug": "35mm", "sessionId": "98960"},
+      {"cinemaId": "2103", "presentationSlug": "night-bus", "showTimeClt": "2026-10-17T19:40:00", "businessDateClt": "2026-10-17", "status": "ONSALE", "formatSlug": "35mm", "sessionId": "98961"},
+      {"cinemaId": "2106", "presentationSlug": "primetime", "showTimeClt": "2026-10-13T19:40:00", "businessDateClt": "2026-10-13", "status": "ONSALE", "formatSlug": "2d-digital", "sessionId": "77001"},
+      {"cinemaId": "2106", "presentationSlug": "primetime", "showTimeClt": "2026-10-13T21:40:00", "businessDateClt": "2026-10-13", "status": "ONSALE", "formatSlug": "2d-digital", "sessionId": "77002"},
+      {"cinemaId": "2106", "presentationSlug": "primetime", "showTimeClt": "2026-10-17T18:00:00", "businessDateClt": "2026-10-17", "status": "ONSALE", "formatSlug": "2d-digital", "sessionId": "77003"}
+    ]
+  }
+}

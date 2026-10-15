@@ -1,0 +1,8 @@
+title = "MovieXFone"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "A theater id assigned with key= looked like a generic API key."
+regexes = ['''amc-lincoln-square-13''']

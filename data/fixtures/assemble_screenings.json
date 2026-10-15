@@ -1,0 +1,33 @@
+{
+  "_meta": {
+    "synthetic": true,
+    "built": "2026-10-13",
+    "reason": "Live api.assemble.film was blocked by this environment's egress. Shape follows the documented fields: venue, start, tickets_url, availability. No format field. One Alamo time and one Nitehawk time are intentionally wrong so tests can prove first-party feeds win."
+  },
+  "screenings": [
+    {"film": "Digger", "venue": "Regal Union Square", "start": "2026-10-13T19:10:00-04:00", "tickets_url": "https://www.regmovies.com/theatres/regal-union-square", "availability": "on_sale"},
+    {"film": "Digger", "venue": "Regal Union Square", "start": "2026-10-13T21:45:00-04:00", "tickets_url": "https://www.regmovies.com/theatres/regal-union-square", "availability": "on_sale"},
+    {"film": "Verity", "venue": "Regal Union Square", "start": "2026-10-13T19:35:00-04:00", "tickets_url": "https://www.regmovies.com/theatres/regal-union-square", "availability": "on_sale"},
+    {"film": "Verity", "venue": "Regal Union Square", "start": "2026-10-13T22:10:00-04:00", "tickets_url": "https://www.regmovies.com/theatres/regal-union-square", "availability": "on_sale"},
+    {"film": "The Social Reckoning", "venue": "Regal Union Square", "start": "2026-10-13T18:50:00-04:00", "tickets_url": "https://www.regmovies.com/theatres/regal-union-square", "availability": "on_sale"},
+    {"film": "Digger", "venue": "AMC 19th St. East 6", "start": "2026-10-13T19:20:00-04:00", "tickets_url": "https://www.amctheatres.com/movie-theatres/new-york-city", "availability": "on_sale"},
+    {"film": "Digger", "venue": "AMC 19th St. East 6", "start": "2026-10-13T21:50:00-04:00", "tickets_url": "https://www.amctheatres.com/movie-theatres/new-york-city", "availability": "on_sale"},
+    {"film": "Verity", "venue": "AMC 19th St. East 6", "start": "2026-10-13T20:00:00-04:00", "tickets_url": "https://www.amctheatres.com/movie-theatres/new-york-city", "availability": "on_sale"},
+    {"film": "Verity", "venue": "AMC Lincoln Square 13", "start": "2026-10-13T19:00:00-04:00", "tickets_url": "https://www.amctheatres.com/movie-theatres/new-york-city/amc-lincoln-square-13", "availability": "on_sale"},
+    {"film": "Verity", "venue": "AMC Lincoln Square 13", "start": "2026-10-13T21:40:00-04:00", "tickets_url": "https://www.amctheatres.com/movie-theatres/new-york-city/amc-lincoln-square-13", "availability": "on_sale"},
+    {"film": "The Social Reckoning", "venue": "AMC Lincoln Square 13", "start": "2026-10-13T19:30:00-04:00", "tickets_url": "https://www.amctheatres.com/movie-theatres/new-york-city/amc-lincoln-square-13", "availability": "on_sale"},
+    {"film": "The Social Reckoning", "venue": "AMC Lincoln Square 13", "start": "2026-10-13T22:00:00-04:00", "tickets_url": "https://www.amctheatres.com/movie-theatres/new-york-city/amc-lincoln-square-13", "availability": "on_sale"},
+    {"film": "Resident Evil", "venue": "AMC Empire 25", "start": "2026-10-13T18:30:00-04:00", "tickets_url": "https://www.amctheatres.com/movie-theatres/new-york-city/amc-empire-25", "availability": "on_sale"},
+    {"film": "Resident Evil", "venue": "AMC Empire 25", "start": "2026-10-13T21:15:00-04:00", "tickets_url": "https://www.amctheatres.com/movie-theatres/new-york-city/amc-empire-25", "availability": "on_sale"},
+    {"film": "Resident Evil", "venue": "AMC Empire 25", "start": "2026-10-16T19:00:00-04:00", "tickets_url": "https://www.amctheatres.com/movie-theatres/new-york-city/amc-empire-25", "availability": "on_sale"},
+    {"film": "Resident Evil", "venue": "AMC Empire 25", "start": "2026-10-16T21:40:00-04:00", "tickets_url": "https://www.amctheatres.com/movie-theatres/new-york-city/amc-empire-25", "availability": "on_sale"},
+    {"film": "The Social Reckoning", "venue": "Quad Cinema", "start": "2026-10-13T19:00:00-04:00", "tickets_url": "https://quadcinema.com", "availability": "on_sale"},
+    {"film": "The Social Reckoning", "venue": "Quad Cinema", "start": "2026-10-13T21:15:00-04:00", "tickets_url": "https://quadcinema.com", "availability": "on_sale"},
+    {"film": "Verity", "venue": "Regal UA Kaufman Astoria", "start": "2026-10-13T19:15:00-04:00", "tickets_url": "https://www.regmovies.com/theatres/regal-ua-kaufman-astoria", "availability": "on_sale"},
+    {"film": "Verity", "venue": "Regal UA Kaufman Astoria", "start": "2026-10-13T21:30:00-04:00", "tickets_url": "https://www.regmovies.com/theatres/regal-ua-kaufman-astoria", "availability": "on_sale"},
+    {"film": "The Social Reckoning", "venue": "Nitehawk Cinema Prospect Park", "start": "2026-10-13T19:00:00-04:00", "tickets_url": "https://nitehawkcinema.com/prospectpark/purchase/20001/", "availability": "on_sale"},
+    {"film": "The Social Reckoning", "venue": "Nitehawk Cinema Prospect Park", "start": "2026-10-16T19:10:00-04:00", "tickets_url": "https://nitehawkcinema.com/prospectpark/purchase/24498415/", "availability": "on_sale"},
+    {"film": "The Social Reckoning", "venue": "Nitehawk Cinema Prospect Park", "start": "2026-10-16T21:50:00-04:00", "tickets_url": "https://nitehawkcinema.com/prospectpark/purchase/24498416/", "availability": "on_sale"},
+    {"film": "Verity", "venue": "Alamo Drafthouse Lower Manhattan", "start": "2026-10-13T15:00:00-04:00", "tickets_url": "https://drafthouse.com/nyc/show/verity?cinemaId=2101&sessionId=should-lose", "availability": "on_sale"}
+  ]
+}

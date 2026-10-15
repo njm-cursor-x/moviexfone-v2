@@ -1,0 +1,75 @@
+name,borough,neighborhood,address,operator,tier,screens,ticketing_platform,covered_gracenote,covered_intl_showtimes,covered_movieglu,covered_serpapi_google,covered_assemble,first_party_source,status,confidence,notes
+AMC Empire 25,Manhattan,Times Square/Theater District,234 W 42nd St,AMC,chain,25,AMC (own),Y,Y,Y,Y,seen,"AMC Developer API (free, non-commercial, approval)",open,high,"IMAX, Dolby Cinema"
+AMC Lincoln Square 13,Manhattan,Upper West Side,1998 Broadway,AMC,chain,13,AMC (own),Y,Y,Y,Y,seen,AMC Developer API,open,high,"IMAX (large-format), Dolby"
+AMC 34th Street 14,Manhattan,Midtown South/Herald Sq,312 W 34th St,AMC,chain,14,AMC (own),Y,Y,Y,Y,seen,AMC Developer API,open,high,
+AMC Kips Bay 15,Manhattan,Kips Bay,570 2nd Ave,AMC,chain,15,AMC (own),Y,Y,Y,Y,seen,AMC Developer API,open,high,
+AMC Village 7,Manhattan,East Village,66 3rd Ave,AMC,chain,7,AMC (own),Y,Y,Y,Y,seen,AMC Developer API,open,high,
+AMC 19th St. East 6,Manhattan,Flatiron/Gramercy,890 Broadway,AMC,chain,6,AMC (own),Y,Y,Y,Y,seen,AMC Developer API,open,high,address from memory (UNVERIFIED)
+AMC 84th Street 6,Manhattan,Upper West Side,2310 Broadway,AMC,chain,6,AMC (own),Y,Y,Y,Y,seen,AMC Developer API,open,high,
+AMC Orpheum 7,Manhattan,Upper East Side,1538 3rd Ave,AMC,chain,7,AMC (own),Y,Y,Y,Y,seen,AMC Developer API,open,high,
+AMC Magic Johnson Harlem 9,Manhattan,Harlem,2309 Frederick Douglass Blvd,AMC,chain,9,AMC (own),Y,Y,Y,Y,seen,AMC Developer API,open,high,
+Regal Union Square,Manhattan,Union Square,850 Broadway (Regal theatre id 1320),Regal (Cineworld),chain,17,Regal (own),Y,Y,Y,Y,seen,none accessible (dev portal invite-only; site behind Cloudflare),open,high,"ScreenX, 4DX; address 850 Broadway from memory (OSM has 1320 = Regal id)"
+Regal Times Square (fka E-Walk),Manhattan,Times Square,247 W 42nd St,Regal (Cineworld),chain,13,Regal (own),Y,Y,Y,Y,seen,none accessible,open,high,"renamed from E-Walk; 4DX, RPX"
+Regal Essex Crossing & RPX,Manhattan,Lower East Side,129 Delancey St (OSM) / 115 Delancey (UNVERIFIED),Regal (Cineworld),chain,14,Regal (own),Y,Y,Y,Y,seen,none accessible,open,high,screen count 13-14 (sources differ)
+Regal Battery Park,Manhattan,Battery Park City,102 North End Ave,Regal (Cineworld),chain,11,Regal (own),Y,Y,Y,Y,seen,none accessible,open,high,
+Alamo Drafthouse Lower Manhattan,Manhattan,Financial District,28 Liberty St,Alamo Drafthouse (Sony),chain,14,Vista (Alamo own site),Y,Y,Y,Y,seen,Alamo public JSON feed (drafthouse.com/s/mother/v2/schedule/market/nyc) - TESTED,open,high,"feed returned 1,020 sessions for 3 NYC houses on 2026-10-12"
+The Cinemas New York (fka iPic Fulton Market),Manhattan,Seaport/FiDi,11 Fulton St,Blue Fox Entertainment,indie_commercial,8,unknown,Y,Y,P,Y,not_seen,unknown,open,medium,rebranded June 2026 after iPic bankruptcy
+Angelika Film Center,Manhattan,SoHo/NoHo,18 W Houston St,Reading International (Angelika),indie_commercial,6,Vista (via Reading Cinemas API),Y,Y,P,Y,seen,undocumented production-api.readingcinemas.com (seen in site JS; not called),open,high,
+Village East by Angelika,Manhattan,East Village,181-189 2nd Ave,Reading International (Angelika),indie_commercial,7,Vista (via Reading Cinemas API),Y,Y,P,Y,seen,undocumented Reading API,open,high,
+"Cinema 1,2,3 by Angelika",Manhattan,Upper East Side/Midtown East,1001 3rd Ave,Reading International (Angelika),indie_commercial,3,Vista (via Reading Cinemas API),Y,Y,P,Y,seen,undocumented Reading API,open,high,
+Film Forum,Manhattan,South Village,209 W Houston St,Film Forum (nonprofit),nonprofit,4,INDY-ish/unknown (boxoffice link),P,P,N,P,not_seen,JSON-LD ScreeningEvent on homepage but startDate empty (titles only),open,high,
+IFC Center,Manhattan,Greenwich Village,323 6th Ave,AMC Networks,indie_commercial,5,own tickets.ifccenter.com (behind Imperva),Y,Y,P,Y,seen,site HTML only,open,high,
+Metrograph,Manhattan,Lower East Side,7 Ludlow St,Metrograph,indie_commercial,2,Vista (t.metrograph.com visSelectTickets.aspx),Y,Y,P,Y,not_seen,site HTML lists Vista session links,open,high,
+Film at Lincoln Center (Walter Reade + Elinor Bunin Munroe),Manhattan,Lincoln Square,165 W 65th St / 144 W 65th St,Film at Lincoln Center (nonprofit),nonprofit,3,"Tessitura-style purchase.filmlinc.org (Queue-it, Imperva) - platform UNVERIFIED",P,P,N,P,not_seen,site HTML only,open,high,NYFF season queueing observed
+Quad Cinema,Manhattan,Greenwich Village,34 W 13th St,Cohen Media Group,indie_commercial,4,Fandango (links to fandango.com/quadcinema_aaefp),Y,Y,P,Y,seen,Fandango only (ToS forbids scraping),open,high,
+Cinema Village,Manhattan,Greenwich Village,22 E 12th St,Cinema Village,indie_commercial,3,mixed (Fandango links; BoldType for festivals),Y,Y,P,Y,not_seen,site HTML,open,high,
+Paris Theater,Manhattan,Midtown (W 58th),4 W 58th St,Netflix,indie_commercial,1,"own tickets.paristheaternyc.com (Next.js, Cloudflare)",Y,Y,P,Y,not_seen,site only,open,high,
+Roxy Cinema Tribeca,Manhattan,Tribeca,2 6th Ave,The Roxy Hotel,indie_commercial,1,Veezi,Y,Y,P,Y,not_seen,Veezi public sessions page (siteToken) / Veezi API needs cinema token,open,high,
+Anthology Film Archives,Manhattan,East Village,32 2nd Ave,Anthology (nonprofit),nonprofit,2,own,P,P,N,P,not_seen,site HTML,open,high,repertory
+IndieHouse Cinema,Manhattan,Hell's Kitchen,358 W 44th St (Producers Club bldg) - UNVERIFIED,IndieHouse,indie_commercial,5,unknown,Y,Y,P,Y,not_seen,unknown,open,low,Cinema Treasures lists as open; website did not resolve from box
+SVA Theatre,Manhattan,Chelsea,333 W 23rd St,School of Visual Arts,nonprofit,2,unknown,P,P,N,P,not_seen,site,open,medium,mostly events/festivals
+MoMA Film,Manhattan,Midtown,11 W 53rd St,Museum of Modern Art,nonprofit,4,own,P,P,N,P,not_seen,site (403 to box),open,high,museum screenings
+Japan Society Film,Manhattan,Turtle Bay,333 E 47th St,Japan Society,nonprofit,1,Ticketure (boxoffice.japansociety.org),P,P,N,P,not_seen,site,open,medium,series-based
+Maysles Cinema,Manhattan,Harlem,343 Malcolm X Blvd - UNVERIFIED,Maysles Documentary Center,micro,1,unknown,N,N,N,N,not_seen,site (Squarespace),open,medium,
+Symphony Space (Leonard Nimoy Thalia),Manhattan,Upper West Side,2537 Broadway - UNVERIFIED,Symphony Space,nonprofit,1,unknown,P,P,N,P,not_seen,site,open,medium,part-time film venue
+Rooftop Cinema Club Midtown,Manhattan,Midtown,UNVERIFIED,Rooftop Cinema Club,seasonal,1,own,N,N,N,N,not_seen,site,seasonal,low,seasonal outdoor
+Alamo Drafthouse Downtown Brooklyn,Brooklyn,Downtown Brooklyn (City Point),445 Albee Sq W,Alamo Drafthouse (Sony),chain,12,Vista (Alamo own),Y,Y,Y,Y,seen,Alamo public JSON feed - TESTED,open,high,
+BAM Rose Cinemas,Brooklyn,Fort Greene,30 Lafayette Ave,Brooklyn Academy of Music,nonprofit,4,own (platform UNVERIFIED),P,P,N,P,seen,site,open,high,
+BAM Rose Cinemas at BAM Strong/KBH,Brooklyn,Fort Greene,10? Lafayette Ave (OSM) - UNVERIFIED,Brooklyn Academy of Music,nonprofit,2,own,P,P,N,P,not_seen,site,open,medium,
+Nitehawk Cinema Williamsburg,Brooklyn,Williamsburg,136 Metropolitan Ave,Nitehawk,indie_commercial,3,Filmbot,Y,Y,P,Y,seen,schema.org ScreeningEvent JSON-LD with startDate + purchase URL - TESTED,open,high,
+Nitehawk Cinema Prospect Park,Brooklyn,Windsor Terrace/Park Slope,188 Prospect Park W,Nitehawk,indie_commercial,7,Filmbot,Y,Y,P,Y,seen,"JSON-LD (same platform, not separately tested)",open,high,
+Williamsburg Cinemas,Brooklyn,Williamsburg,217 Grand St,Williamsburg Cinemas,indie_commercial,7,unknown,Y,Y,P,Y,seen,site 403 to box,open,high,first-run
+Cobble Hill Cinemas,Brooklyn,Cobble Hill,265 Court St,Cobble Hill Cinemas,indie_commercial,5,unknown,Y,Y,P,Y,seen,site 403 to box,open,high,first-run
+Alpine Cinema,Brooklyn,Bay Ridge,6817 5th Ave,Alpine Cinemas,indie_commercial,8,unknown,Y,Y,P,Y,seen,site,open,high,first-run
+Kent Theater,Brooklyn,Midwood,1170 Coney Island Ave,Kent Theater,indie_commercial,3,Fandango/Atom links,Y,Y,P,Y,seen,site,open,high,first-run
+Regal UA Sheepshead Bay,Brooklyn,Sheepshead Bay,3907 Shore Pkwy,Regal (Cineworld),chain,14,Regal (own),Y,Y,Y,Y,seen,none accessible,open,high,
+Syndicated Bar Theater Kitchen,Brooklyn,Bushwick,40 Bogart St,Syndicated,indie_commercial,1,Veezi,Y,Y,P,Y,seen,Veezi public sessions page (siteToken in site HTML),open,high,second-run/repertory
+Spectacle Theater,Brooklyn,Williamsburg,124 S 3rd St,Spectacle (volunteer collective),micro,1,own,N,N,N,N,not_seen,site,open,medium,
+Film Noir Cinema,Brooklyn,Greenpoint,122 Meserole Ave,Film Noir Cinema,micro,1,unknown,N,N,N,N,not_seen,site (Squarespace),open,low,status not independently confirmed
+Stuart Cinema & Cafe,Brooklyn,Greenpoint,79 West St,Stuart Cinema,micro,2,unknown,N,N,N,N,seen,site,open,medium,CT lists under LIC; OSM places in Greenpoint
+Cinema Warsaw,Brooklyn,Greenpoint,UNVERIFIED,UNVERIFIED,micro,1,unknown,N,N,N,N,not_seen,unknown,open,low,listed open on Cinema Treasures only
+Regal UA Kaufman Astoria,Queens,Astoria,35-30 38th St,Regal (Cineworld),chain,14,Regal (own),Y,Y,Y,Y,seen,none accessible,open,high,RPX
+Museum of the Moving Image,Queens,Astoria,36-01 35th Ave - UNVERIFIED,MoMI (nonprofit),nonprofit,2,own,P,P,N,P,not_seen,site,open,high,
+AMC Bay Terrace 6,Queens,Bayside,211-01 26th Ave - UNVERIFIED,AMC,chain,6,AMC (own),Y,Y,Y,Y,seen,AMC Developer API,open,high,
+AMC Fresh Meadows 7,Queens,Fresh Meadows,190-02 Horace Harding Expy,AMC,chain,7,AMC (own),Y,Y,Y,Y,seen,AMC Developer API,open,high,
+Regal Tangram 4DX,Queens,Flushing,133-36 37th Ave,Regal (Cineworld),chain,7,Regal (own),Y,Y,Y,Y,seen,none accessible,open,high,
+Regal UA Midway,Queens,Forest Hills,108-22 Queens Blvd,Regal (Cineworld),chain,9,Regal (own),Y,Y,Y,Y,seen,none accessible,open,medium,listed on regmovies.com; CT open
+Cinemart Cinemas,Queens,Forest Hills,106-03 Metropolitan Ave,Cinemart,indie_commercial,5,unknown,Y,Y,P,Y,seen,site,open,high,
+Regal Atlas Park Stadium 8,Queens,Glendale,80-28 Cooper Ave,Regal (Cineworld),chain,8,Regal (own),Y,Y,Y,Y,seen,none accessible,open,high,
+Kew Gardens Cinemas,Queens,Kew Gardens,81-05 Lefferts Blvd,Kew Gardens Cinemas,indie_commercial,6,unknown,Y,Y,P,Y,seen,site 403 to box,open,high,
+Low Cinema,Queens,Ridgewood,70-11 60th St? (OSM) - UNVERIFIED,Low Cinema,micro,1,unknown,N,N,N,N,not_seen,site,open,medium,
+Jamaica Multiplex,Queens,Jamaica,159-02 Jamaica Ave,UNVERIFIED,indie_commercial,,unknown,Y,Y,P,Y,not_seen,unknown,unverified,low,"in OSM, NOT in Cinema Treasures open list"
+Main Street Cinemas,Queens,Kew Gardens Hills/Flushing,72-66 Main St,UNVERIFIED,indie_commercial,,unknown,Y,Y,P,Y,not_seen,unknown,unverified,low,in OSM only
+AMC Bay Plaza Cinema 13,Bronx,Co-op City/Baychester,2210 Bartow Ave,AMC,chain,13,AMC (own),Y,Y,Y,Y,seen,AMC Developer API,open,high,
+Regal Concourse,Bronx,Concourse/Yankee Stadium,214 E 161st St,Regal (Cineworld),chain,10,Regal (own),Y,Y,Y,Y,seen,none accessible,open,medium,OSM still tags as 'Concourse Plaza Multiplex'
+Cinema on the Sound,Bronx,City Island?,UNVERIFIED,UNVERIFIED,seasonal,1,unknown,N,N,N,N,not_seen,unknown,unverified,low,Cinema Treasures only
+Alamo Drafthouse Staten Island,Staten Island,New Dorp,2636 Hylan Blvd,Alamo Drafthouse (Sony),chain,9,Vista (Alamo own),Y,Y,Y,Y,seen,Alamo public JSON feed - TESTED,open,high,
+AMC Dine-In Staten Island 11,Staten Island,New Springville,2655 Richmond Ave - UNVERIFIED,AMC,chain,11,AMC (own),Y,Y,Y,Y,seen,AMC Developer API,open,high,
+Regal Bricktown Charleston,Staten Island,Charleston,165 Bricktown Way,Regal (Cineworld),chain,10,Regal (own),Y,Y,Y,Y,seen,none accessible,open,high,
+Atrium Stadium Cinemas,Staten Island,Arden Heights/Rossville,680 Arthur Kill Rd,Atrium Cinemas,indie_commercial,11,Omniterm (omniwebticketing.com),Y,Y,P,Y,seen,site,open,high,
+DCTV Firehouse Cinema,Manhattan,Chinatown/Tribeca,87 Lafayette St,Downtown Community Television (DCTV),nonprofit,1,Agile websales (per reviewer; site behind Incapsula WAF),P,P,N,P,not_seen,site (WAF) / Mato event pages,open,high,v1 wrongly excluded; 2026-10-26 listing on ma.to verified 2026-10-12
+New Plaza Cinema,Manhattan,Columbus Circle / Upper West Side,"Museum of Arts and Design, 2 Columbus Cir; Macaulay Honors College, 35 W 67th St (LIKELY)",New Plaza Cinema,nonprofit,2,unknown,P,P,N,P,seen,Assemble lists it,open,medium,found in Assemble venue list 2026-10-12; 2 rooms at 2 host venues
+LOOK Dine-In W57 (fka Landmark at 57 West),Manhattan,Hell's Kitchen,657 W 57th St,LOOK Cinemas,closed,8,,,,,,,,closed 2026-01-04,high,Cinema Treasures + W42ST door notice
+Cinepolis Chelsea,Manhattan,Chelsea,260 W 23rd St,Cinepolis,closed,9,,,,,,,,closed 2023-01,high,
+Regal UA Court Street,Brooklyn,Downtown Brooklyn,106 Court St,Regal,closed,12,,,,,,,,closed 2022-01,high,Brooklyn Eagle / NYT
+Regal UA Staten Island & RPX,Staten Island,Mid-Island,2474 Forest Ave,Regal,closed,,,,,,,,,closed 2023 (LIKELY),medium,r/statenisland thread; still in OSM

@@ -1,0 +1,173 @@
+{
+  "_meta": {
+    "trimmed_from": "live Assemble capture 2026-10-13",
+    "film_id": "1283515",
+    "city": "new-york-ny",
+    "note": "Title is not on each screening. film_id 1283515 is Verity."
+  },
+  "film_id": "1283515",
+  "city": "new-york-ny",
+  "screening_count": 8,
+  "screenings": [
+    {
+      "venue": {
+        "id": "75f0a587-cd01-45e9-88bb-9a89669e797f",
+        "name": "AMC Empire 25",
+        "address": "234 W. 42nd St.",
+        "city": "New York",
+        "state": "NY",
+        "postal_code": "10036",
+        "country": "US",
+        "latitude": null,
+        "longitude": null,
+        "website": "https://www.amctheatres.com/movie-theatres/new-york-city/amc-empire-25"
+      },
+      "date": "2026-10-13",
+      "starts_at": "2026-10-13T17:30",
+      "url": "https://www.amctheatres.com/showtimes/all/2026-10-13/empire/all/147704056",
+      "availability": "on_sale",
+      "note": null,
+      "scarcity": null
+    },
+    {
+      "venue": {
+        "id": "75f0a587-cd01-45e9-88bb-9a89669e797f",
+        "name": "AMC Empire 25",
+        "address": "234 W. 42nd St.",
+        "city": "New York",
+        "state": "NY",
+        "postal_code": "10036",
+        "country": "US",
+        "latitude": null,
+        "longitude": null,
+        "website": "https://www.amctheatres.com/movie-theatres/new-york-city/amc-empire-25"
+      },
+      "date": "2026-10-13",
+      "starts_at": "2026-10-13T18:00",
+      "url": "https://www.amctheatres.com/showtimes/all/2026-10-13/empire/all/147720975",
+      "availability": "on_sale",
+      "note": null,
+      "scarcity": null
+    },
+    {
+      "venue": {
+        "id": "18a52a1c-7a0c-4ffa-9b9d-776b6f07a740",
+        "name": "Alamo Drafthouse Cinema Lower Manhattan",
+        "address": "28 Liberty St",
+        "city": "New York",
+        "state": "NY",
+        "postal_code": "10005",
+        "country": "US",
+        "latitude": null,
+        "longitude": null,
+        "website": "https://drafthouse.com/NYC"
+      },
+      "date": "2026-10-13",
+      "starts_at": "2026-10-13T18:15",
+      "url": "https://drafthouse.com/nyc/show/verity?cinemaId=2103&sessionId=98951",
+      "availability": "on_sale",
+      "note": null,
+      "scarcity": null
+    },
+    {
+      "venue": {
+        "id": "2918c3cc-a76d-4251-81e2-cae5ee4c373f",
+        "name": "Regal Union Square Stadium 14",
+        "address": "850 Broadway",
+        "city": "New York",
+        "state": "NY",
+        "postal_code": "10003",
+        "country": "US",
+        "latitude": null,
+        "longitude": null,
+        "website": "https://www.regmovies.com/theatres/regal-union-square-screenx-4dx/1320#/"
+      },
+      "date": "2026-10-13",
+      "starts_at": "2026-10-13T18:20",
+      "url": "https://www.regmovies.com/movies/verity-(open-cap/eng-sub)-HO00022541",
+      "availability": "on_sale",
+      "note": null,
+      "scarcity": null
+    },
+    {
+      "venue": {
+        "id": "7883a73d-d6ee-47a5-a015-aa5c44db7289",
+        "name": "Regal Battery Park Stadium 11",
+        "address": "102 North End Ave.",
+        "city": "New York",
+        "state": "NY",
+        "postal_code": "10281",
+        "country": "US",
+        "latitude": null,
+        "longitude": null,
+        "website": "https://www.regmovies.com/theatres/regal-battery-park/1335#/"
+      },
+      "date": "2026-10-13",
+      "starts_at": "2026-10-13T19:10",
+      "url": "https://www.regmovies.com/movies/verity-HO00018457",
+      "availability": "on_sale",
+      "note": null,
+      "scarcity": null
+    },
+    {
+      "venue": {
+        "id": "2918c3cc-a76d-4251-81e2-cae5ee4c373f",
+        "name": "Regal Union Square Stadium 14",
+        "address": "850 Broadway",
+        "city": "New York",
+        "state": "NY",
+        "postal_code": "10003",
+        "country": "US",
+        "latitude": null,
+        "longitude": null,
+        "website": "https://www.regmovies.com/theatres/regal-union-square-screenx-4dx/1320#/"
+      },
+      "date": "2026-10-13",
+      "starts_at": "2026-10-13T20:00",
+      "url": "https://www.regmovies.com/movies/verity-HO00018457",
+      "availability": "on_sale",
+      "note": null,
+      "scarcity": null
+    },
+    {
+      "venue": {
+        "id": "18a52a1c-7a0c-4ffa-9b9d-776b6f07a740",
+        "name": "Alamo Drafthouse Cinema Lower Manhattan",
+        "address": "28 Liberty St",
+        "city": "New York",
+        "state": "NY",
+        "postal_code": "10005",
+        "country": "US",
+        "latitude": null,
+        "longitude": null,
+        "website": "https://drafthouse.com/NYC"
+      },
+      "date": "2026-10-13",
+      "starts_at": "2026-10-13T20:30",
+      "url": "https://drafthouse.com/nyc/show/verity?cinemaId=2103&sessionId=98908",
+      "availability": "on_sale",
+      "note": null,
+      "scarcity": null
+    },
+    {
+      "venue": {
+        "id": "7883a73d-d6ee-47a5-a015-aa5c44db7289",
+        "name": "Regal Battery Park Stadium 11",
+        "address": "102 North End Ave.",
+        "city": "New York",
+        "state": "NY",
+        "postal_code": "10281",
+        "country": "US",
+        "latitude": null,
+        "longitude": null,
+        "website": "https://www.regmovies.com/theatres/regal-battery-park/1335#/"
+      },
+      "date": "2026-10-13",
+      "starts_at": "2026-10-13T21:40",
+      "url": "https://www.regmovies.com/movies/verity-HO00018457",
+      "availability": "on_sale",
+      "note": null,
+      "scarcity": null
+    }
+  ]
+}

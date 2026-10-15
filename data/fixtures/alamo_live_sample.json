@@ -1,0 +1,133 @@
+{
+  "_meta": {
+    "trimmed_from": "live Alamo NYC feed 2026-10-13",
+    "full_sessions": 1559
+  },
+  "data": {
+    "market": [
+      {
+        "id": "nyc",
+        "cinemas": [
+          {
+            "id": "2103",
+            "name": "Lower Manhattan",
+            "latitude": 40.708327,
+            "longitude": -74.008664
+          },
+          {
+            "id": "2102",
+            "name": "Staten Island",
+            "latitude": 40.56632694287531,
+            "longitude": -74.10995274442374
+          },
+          {
+            "id": "2101",
+            "name": "Downtown Brooklyn",
+            "latitude": 40.6907,
+            "longitude": -73.9831
+          }
+        ]
+      }
+    ],
+    "presentations": [
+      {
+        "slug": "primetime",
+        "show": {
+          "title": "Primetime"
+        }
+      },
+      {
+        "slug": "digger",
+        "show": {
+          "title": "Digger"
+        }
+      },
+      {
+        "slug": "a-prayer-for-the-dying",
+        "show": {
+          "title": "A Prayer for the Dying"
+        }
+      },
+      {
+        "slug": "advance-screening-dune-part-three-70mm-insider-screening",
+        "show": {
+          "title": "Dune: Part Three"
+        }
+      },
+      {
+        "slug": "cameron-winter-at-carnegie-hall",
+        "show": {
+          "title": "Cameron Winter at Carnegie Hall"
+        }
+      }
+    ],
+    "sessions": [
+      {
+        "cinemaId": "2103",
+        "sessionId": "98310",
+        "presentationSlug": "a-prayer-for-the-dying",
+        "status": "ONSALE",
+        "businessDateClt": "2026-10-14",
+        "showTimeClt": "2026-10-14T15:30:00",
+        "showTimeUtc": "2026-10-14T19:30:00",
+        "formatSlug": "2d-digital",
+        "cinemaTimeZoneName": "America/New_York"
+      },
+      {
+        "cinemaId": "2103",
+        "sessionId": "98311",
+        "presentationSlug": "a-prayer-for-the-dying",
+        "status": "ONSALE",
+        "businessDateClt": "2026-10-15",
+        "showTimeClt": "2026-10-15T16:00:00",
+        "showTimeUtc": "2026-10-15T20:00:00",
+        "formatSlug": "2d-digital",
+        "cinemaTimeZoneName": "America/New_York"
+      },
+      {
+        "cinemaId": "2101",
+        "sessionId": "136044",
+        "presentationSlug": "advance-screening-dune-part-three-70mm-insider-screening",
+        "status": "SOLDOUT",
+        "businessDateClt": "2026-12-15",
+        "showTimeClt": "2026-12-15T18:00:00",
+        "showTimeUtc": "2026-12-15T23:00:00",
+        "formatSlug": "70mm",
+        "cinemaTimeZoneName": "America/New_York"
+      },
+      {
+        "cinemaId": "2101",
+        "sessionId": "139222",
+        "presentationSlug": "digger",
+        "status": "PAST",
+        "businessDateClt": "2026-10-13",
+        "showTimeClt": "2026-10-13T18:00:00",
+        "showTimeUtc": "2026-10-13T22:00:00",
+        "formatSlug": "2d-digital",
+        "cinemaTimeZoneName": "America/New_York"
+      },
+      {
+        "cinemaId": "2101",
+        "sessionId": "139565",
+        "presentationSlug": "primetime",
+        "status": "NOTONSALE",
+        "businessDateClt": "2026-10-16",
+        "showTimeClt": "2026-10-16T19:00:00",
+        "showTimeUtc": "2026-10-16T23:00:00",
+        "formatSlug": "2d-digital",
+        "cinemaTimeZoneName": "America/New_York"
+      },
+      {
+        "cinemaId": "2101",
+        "sessionId": "137556",
+        "presentationSlug": "cameron-winter-at-carnegie-hall",
+        "status": "ONSALE",
+        "businessDateClt": "2027-01-28",
+        "showTimeClt": "2027-01-28T19:00:00",
+        "showTimeUtc": "2027-01-29T00:00:00",
+        "formatSlug": "35mm",
+        "cinemaTimeZoneName": "America/New_York"
+      }
+    ]
+  }
+}

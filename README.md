@@ -1,1 +1,148 @@
-# moviexfone-v2
+# MovieXFone
+
+A New York City showtimes line. You ask "what's playing near Union Square tonight?" and a short, warm voice answers from a database this service owns. The voice model never looks showtimes up on the web.
+
+MovieXFone is an internal codename. A live trademark (USPTO Reg. 2822672) covers movie schedule and location information services, so this demo does not use that brand, its old catchphrase, or an imitation of that voice.
+
+## Quickstart
+
+```bash
+python3.12 -m venv .venv
+source .venv/bin/activate
+pip install --require-hashes -r requirements.lock
+pip install --require-hashes -r requirements-build.lock
+pip install --no-deps --no-build-isolation -e .
+python -m moviexfone
+```
+
+The runtime lockfile installs on CPython 3.12. `requirements-build.lock` is the hashed setuptools pin used to build this project with `--no-build-isolation`. Tests and linters also install `requirements-dev.lock` with `--require-hashes`.
+
+Open http://127.0.0.1:8000. Type a question, or use the mic where the browser allows it. With no API key the page is a **demo voice**: your browser speaks the `speak` line our server already trimmed. Showtimes still come from the real query layer. Live xAI voice is the other path: see `docs/DEMO.md`. The page mints a one-minute ticket and connects with `?ticket=`.
+
+Copy `.env.example` to `.env` if you want overrides. `.env` is gitignored. The only secret is `XAI_API_KEY`, and the repo must never contain one.
+
+Docker:
+
+```bash
+docker build -t moviexfone .
+docker run --rm -p 8000:8000 moviexfone
+```
+
+The image binds `0.0.0.0`. It refuses to start unless `MOVIEXFONE_TOOL_SECRET` is at least 16 bytes. Pass it at run time: `docker run --rm -p 8000:8000 -e MOVIEXFONE_TOOL_SECRET='a-long-random-string' moviexfone`.
+
+## Architecture
+
+```mermaid
+flowchart LR
+  browser[Browser demo] -->|WebSocket audio or text| api[FastAPI]
+  builder[Voice Agent Builder] -->|POST tools + shared secret| api
+  api --> query[Query service]
+  query --> db[(SQLite)]
+  api -->|live flag only| xai[xAI realtime]
+  ingest[Refresh] --> db
+  ingest --> alamo[Alamo NYC JSON]
+  ingest --> nitehawk[Nitehawk JSON-LD]
+  query -->|read-through, 15 min| assemble[Assemble showtimes]
+```
+
+The voice agent only talks to this backend. Location resolution, fuzzy titles, borough polygons, distance, and the ten-second answer cap all happen in code. Times are `America/New_York`. A cinema day runs 03:00 to 02:59.
+
+Tools:
+
+| Tool | What it does |
+|---|---|
+| `search_showtimes` | One call per question. Returns `speak`, at most 2 theaters and 3 times (2 times for "what's playing"). |
+| `get_movie_info` | Rating, runtime, one sentence. |
+| `end_call` | Short goodbye. |
+
+An empty result includes `nearest_alternative` and tells the model not to search again. An uncovered house (Film Forum, Metrograph, and the other repertory rooms) returns a coverage note instead of invented times.
+
+## Data
+
+Public, keyless sources only.
+
+| Source | How we use it | Terms we follow |
+|---|---|---|
+| [Assemble](https://docs.assemble.film/showtimes-mcp) | Read-through cache. Serve SQLite, refetch a title when it is older than about 15 minutes. | On-demand, about 60 requests a minute, pass the cinema ticket link through, do not bulk-mirror. |
+| [Alamo NYC JSON](https://drafthouse.com/s/mother/v2/schedule/market/nyc) | Loaded on startup when live data is on, and from `POST /admin/refresh`. One call is the whole market. Authoritative for the three Alamo houses. | Undocumented feed. Low volume, identified User-Agent. Not for a public product without asking Alamo. |
+| Nitehawk JSON-LD | The two homepages, today only. Those dates replace Assemble for that theater. | Public ScreeningEvent markup. |
+
+There is no AMC developer API, no Fandango, no bot-wall scraping, and no scraper reseller. TMDB is not used. Blurbs in `data/movies.json` are original one-liners so the demo can answer "what's it about?" without a key.
+
+**Fixtures.** This environment could not open `drafthouse.com`, `api.assemble.film`, `nitehawkcinema.com`, or `geosearch.planninglabs.nyc` (TLS was cut by the egress allowlist on 2026-10-13). `data/fixtures/` is synthetic but shaped like those feeds, and one Alamo time and one Nitehawk time are deliberately wrong so tests prove the first-party row wins. They are not a live capture. `python scripts/record_fixtures.py` tries the live hosts and says so if they are blocked.
+
+`python -m moviexfone` fetches live showtimes unless `MOVIEXFONE_LIVE_DATA=0`. Live mode loads the theater registry only and does not load the sample showtimes. Alamo and Nitehawk are fetched before the port opens. Assemble runs on a background worker that stays under 50 requests a minute and skips a film for 15 minutes after a successful fetch. The same three sources run again on Monday, Thursday, and Saturday at 07:00 America/New_York while the process is up. A cold city lookup can take about 25 seconds, so the voice tool answers from SQLite and never waits on Assemble. `/health/data` shows each source's row count, last fetch, and last error.
+
+Source priority is per theater, not a merge: Alamo feed for Alamo, Nitehawk JSON-LD for the dates it actually publishes, Assemble everywhere else. Assemble rows for an Alamo theater are dropped when the Alamo feed is loaded.
+
+## Voice
+
+Two ways in, one tool layer.
+
+### Browser demo, with a real key
+
+```bash
+export XAI_API_KEY='your key'
+export MOVIEXFONE_LIVE_VOICE=1
+export MOVIEXFONE_TOOL_SECRET='a-long-random-string'
+python -m moviexfone
+```
+
+Live voice will not start without that secret. Open `http://127.0.0.1:8000`. The page asks `POST /v1/voice/ticket` for a one-minute ticket and opens the socket with that ticket. Do not put `MOVIEXFONE_TOOL_SECRET` in the page URL. The `Origin` header is not authentication. A bind other than localhost also requires `MOVIEXFONE_BASIC_USER` and `MOVIEXFONE_BASIC_PASSWORD`, and `/health/data` uses that same gate. A localhost bind does not, even if a tunnel makes the port reachable, so do not publish a loopback process. Tickets are limited to 5 a minute per address. `MOVIEXFONE_DAILY_SESSIONS` (default 20) counts established calls and is stored in SQLite. `MOVIEXFONE_SESSION_ALLOW_HOSTS` skips that daily cap. The page does not reconnect a live call by itself.
+
+The key stays on the server. The page streams 24 kHz PCM to `/ws/voice` and plays the reply audio. The server opens `wss://api.x.ai/v1/realtime?model=grok-voice-think-fast-2.0`. One live session at a time. The bridge:
+
+1. Collects every function call until `response.done`.
+2. Runs them and sends every `function_call_output`.
+3. Speaks the tool's `speak` text with a `force_message` instead of a second model pass. Turns without a tool still use `response.create`.
+4. Stops after **two** tool rounds in one question, returns `tool_call_limit`, and the next `response.create` sets `tool_choice` to none. A new question gets a fresh budget.
+5. Does not say "let me check". If a tool takes longer than 700 ms it may say "One sec."
+
+If the key is missing or the socket fails, the page falls back to the demo voice. That fallback is what the automated tests exercise.
+
+### Voice Agent Builder
+
+See [builder/voice-agent-builder.md](builder/voice-agent-builder.md). Short version: paste the prompt and the three tool schemas from `GET /v1/builder/bundle`, point each API Request tool at the matching `POST /v1/tools/...` path, and send `X-MovieXFone-Secret`. Do not enable web search. Attach Builder's free number only after the browser tester sounds right. Twilio is not wired up.
+
+## Tests and scans
+
+```bash
+pytest
+ruff check src tests
+ruff format --check src tests
+mypy src
+bandit -r src -ll
+pip-audit
+# full git history; install gitleaks first, or use the CI step
+gitleaks detect --source . --verbose --redact
+```
+
+The eval is `pytest tests/test_eval.py`: 20 scripted caller questions against the tools layer, including spoken-length checks. GitHub Actions (`.github/workflows/ci.yml`) runs the same set plus gitleaks.
+
+`/health` and `/health/data` show whether the process is on the live voice path and which sources last filled the database.
+
+## Security
+
+- Tool parameters never become a URL. Outbound HTTP is an allowlist: `drafthouse.com`, `api.assemble.film`, `nitehawkcinema.com`, `geosearch.planninglabs.nyc`. Redirects are off.
+- A location that looks like a URL is not geocoded.
+- Ticket links are stored only when the host is a known theater or chain. We do not fetch them.
+- Titles and blurbs are flattened to one line and stripped of instruction-shaped text before they enter `speak`.
+- Tool bodies are length-checked. `format` is an enum.
+- A bind other than localhost, and live voice on any bind, refuse to start unless `MOVIEXFONE_TOOL_SECRET` is at least 16 bytes. When a secret is set, tool routes require it. A remote `/ws/voice` client needs it too. The comparison is a hash compare. `X-Forwarded-For` is not trusted.
+- Demo and tool routes are rate-limited (default 60/minute per client IP, `Retry-After` on 429). `X-Forwarded-For` is ignored.
+- CORS allows the configured origins only, defaulting to localhost.
+- Logs pass through a redaction formatter for bearer tokens, `xai-…` keys, and the tool secret.
+
+## Known limitations
+
+- Assemble usually publishes through Thursday. "Today plus six days" is not something this feed can promise.
+- Assemble has no IMAX, Dolby, or 35mm field. Format answers come from Alamo's `formatSlug` only. If you ask for IMAX, the line says it does not have that listing.
+- No sold-out flag from Assemble. Alamo's sold-out and past sessions are dropped.
+- Nitehawk is fetched from the dated page `/<venue>/YYYY-MM-DD/1/` for today and the next six days. Alamo, Nitehawk, and Assemble refresh at startup and on Monday, Thursday, and Saturday at 07:00 America/New_York. The homepage can still show yesterday after midnight, so it is not used as "today".
+- "What's playing" only knows titles we have already stored (the fixture list, plus whatever Alamo and Nitehawk published). It will miss a film nobody has asked about and that Alamo is not playing.
+- Venue coordinates in the registry are approximate, good to about a block. Neighborhoods and landmarks are a local gazetteer; NYC Planning Labs GeoSearch is only the fallback, and it is skipped for names we already know so "Park Slope" does not become the Armory.
+- The bundled showtimes are illustrative, dated 2026-10-13, and are for the offline demo and the tests. Live mode never serves them. Set `MOVIEXFONE_LIVE_DATA=0` to use them. Assemble looks up a film id from its own search when `movies.json` has none.
+- The lockfile is for CPython 3.12 only. 3.11 and 3.13 fail its hash checks. Start with `python -m moviexfone`. If you launch uvicorn yourself, set `MOVIEXFONE_BIND` to the same host as `--host`, because the startup check reads that variable.
+- The Assemble rate limit is per process. This demo keeps one 50-request bucket inside the process. Run a single process, or a single worker if you start uvicorn or Docker yourself. Two workers each have their own bucket and can exceed Assemble's limit together. `python -m moviexfone` and the Dockerfile both start one process.
+- Live xAI audio has been run against this bridge (browser calls, not the Voice Agent Builder phone path). There is no key in this workspace. `docs/DEMO.md` is the runbook. The tool loop is still covered by a fake session in tests.
+- This is a local demo. It is not a public phone line, and it should not be branded as one.

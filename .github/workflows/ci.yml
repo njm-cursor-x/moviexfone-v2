@@ -1,0 +1,44 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: |
+          python -m pip install --require-hashes -r requirements.lock
+          python -m pip install --require-hashes -r requirements-build.lock
+          python -m pip install --require-hashes -r requirements-dev.lock
+          python -m pip install --no-deps --no-build-isolation -e .
+      - name: Ruff
+        run: |
+          ruff check src tests
+          ruff format --check src tests
+      - name: Mypy
+        run: mypy src
+      - name: Tests
+        run: pytest --cov=moviexfone.api --cov=moviexfone.voice --cov-fail-under=65
+      - name: Bandit
+        run: bandit -r src -ll
+      - name: pip-audit
+        run: |
+          pip-audit -r requirements.lock
+          pip-audit -r requirements-dev.lock
+      - name: Gitleaks
+        run: |
+          curl -sSL -o gitleaks.tar.gz https://github.com/gitleaks/gitleaks/releases/download/v8.28.0/gitleaks_8.28.0_linux_x64.tar.gz
+          echo "a65b5253807a68ac0cafa4414031fd740aeb55f54fb7e55f386acb52e6a840eb  gitleaks.tar.gz" | sha256sum -c
+          tar -xzf gitleaks.tar.gz gitleaks
+          ./gitleaks detect --source . --verbose --redact
