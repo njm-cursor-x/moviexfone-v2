@@ -11,6 +11,7 @@ from typing import Any
 
 import httpx
 
+from moviexfone.geo import haversine_miles
 from moviexfone.http import AllowedClient, UnsafeURLError
 from moviexfone.sources.parse import IncomingShow, parse_alamo, parse_assemble, parse_nitehawk_html
 
@@ -44,6 +45,52 @@ CITY_SLUGS = {
     "Staten Island": ["staten-island-ny"],
 }
 ALL_CITIES = tuple(slug for slugs in CITY_SLUGS.values() for slug in slugs)
+_BOROUGH_SLUG = {borough: slugs[0] for borough, slugs in CITY_SLUGS.items() if len(slugs) == 1}
+# "Kew Gardens Hills/Flushing" contains both names. Flushing is the listing
+# that page belongs to, so it is matched before the Kew Gardens phrase.
+_QUEENS_NEIGHBORHOODS: tuple[tuple[str, str], ...] = (
+    ("astoria", "astoria-ny"),
+    ("fresh meadows", "flushing-ny"),
+    ("bayside", "flushing-ny"),
+    ("flushing", "flushing-ny"),
+    ("forest hills", "forest-hills-ny"),
+    ("kew gardens", "forest-hills-ny"),
+    ("glendale", "forest-hills-ny"),
+)
+_QUEENS_CENTROIDS = {
+    "astoria-ny": (40.7640, -73.9230),
+    "flushing-ny": (40.7650, -73.8330),
+    "forest-hills-ny": (40.7196, -73.8448),
+}
+
+
+def city_slug_for_theater(
+    borough: str | None,
+    neighborhood: str | None,
+    lat: float | None,
+    lng: float | None,
+) -> str | None:
+    """The Assemble city whose 200 replaces this theater.
+
+    One-slug boroughs use the borough. Queens is split by neighborhood, then
+    by the nearest of Astoria, Flushing, and Forest Hills, so one slug's
+    answer does not wait on the other two.
+    """
+    single = _BOROUGH_SLUG.get((borough or "").strip())
+    if single is not None:
+        return single
+    if (borough or "").strip() != "Queens":
+        return None
+    text = (neighborhood or "").strip().lower()
+    for phrase, slug in _QUEENS_NEIGHBORHOODS:
+        if phrase in text:
+            return slug
+    if lat is None or lng is None:
+        return None
+    return min(
+        _QUEENS_CENTROIDS,
+        key=lambda slug: haversine_miles(lat, lng, *_QUEENS_CENTROIDS[slug]),
+    )
 
 
 def _client(*, timeout: float = 20.0) -> AllowedClient:

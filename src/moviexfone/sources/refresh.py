@@ -22,7 +22,12 @@ from datetime import datetime, timedelta
 from moviexfone.catalog import _apply, record_ingest
 from moviexfone.db import Database
 from moviexfone.http import AllowedClient
-from moviexfone.sources.fetch import ALL_CITIES, CITY_SLUGS, fetch_assemble_city, lookup_film_id
+from moviexfone.sources.fetch import (
+    ALL_CITIES,
+    city_slug_for_theater,
+    fetch_assemble_city,
+    lookup_film_id,
+)
 from moviexfone.sources.fetch import _client as assemble_client
 from moviexfone.sources.parse import IncomingShow, parse_assemble
 from moviexfone.timeutil import NY, now_ny
@@ -80,6 +85,22 @@ class RequestBudget:
 
 # One bucket for warm-up, consider(), and /admin/refresh.
 GLOBAL_BUDGET = RequestBudget(limit=_MAX_PER_MINUTE)
+
+
+def _theaters_by_city(db: Database) -> dict[str, list[str]]:
+    grouped: dict[str, list[str]] = {slug: [] for slug in ALL_CITIES}
+    for row in db.query("SELECT theater_id, borough, neighborhood, lat, lng FROM theater"):
+        lat = row["lat"]
+        lng = row["lng"]
+        slug = city_slug_for_theater(
+            str(row["borough"] or ""),
+            str(row["neighborhood"] or ""),
+            None if lat is None else float(lat),
+            None if lng is None else float(lng),
+        )
+        if slug in grouped:
+            grouped[slug].append(str(row["theater_id"]))
+    return grouped
 
 
 def assemble_is_fresh(
@@ -159,6 +180,7 @@ def refresh_assemble(
                 remember_film_ids(db)
             collected: list[IncomingShow] = []
             failed_slugs: set[str] = set()
+            succeeded_slugs: list[str] = []
             for slug in ALL_CITIES:
                 limiter.wait()
                 try:
@@ -170,37 +192,24 @@ def refresh_assemble(
                     failed_slugs.add(slug)
                     log.warning("assemble refresh failed: %s", type(exc).__name__)
                     continue
+                succeeded_slugs.append(slug)
                 collected.extend(parse_assemble(payload, title=title))
             with db.transaction():
-                # A 200 replaces this film's Assemble rows in the boroughs that
-                # answered, including theaters it left. A non-200 city is not an
-                # empty listing: those boroughs keep their previous rows, and the
-                # film is not marked checked. An all-200 body with no screenings
-                # still does not delete. Other films at those theaters stay.
+                # A 200 is that city's listing, including an empty body, so only
+                # its theaters are replaced. A non-200 or transport error is not
+                # an empty listing: that city keeps its rows. Queens slugs are
+                # independent, so one answer is not held for the other two.
+                # The film stays unchecked until every city answers.
                 if failed_slugs:
                     city_failed = True
-                    succeeded = [
-                        borough
-                        for borough, slugs in CITY_SLUGS.items()
-                        if not any(slug in failed_slugs for slug in slugs)
-                    ]
-                    if succeeded:
-                        # Five boroughs, so the statement stays a fixed parameterized query.
-                        padded = [*succeeded, "", "", "", "", ""][:5]
+                by_city = _theaters_by_city(db)
+                for slug in succeeded_slugs:
+                    for theater_id in by_city[slug]:
                         db.execute(
                             """DELETE FROM showtime
-                                WHERE source = 'assemble' AND movie_id = ?
-                                  AND theater_id IN (
-                                      SELECT theater_id FROM theater
-                                      WHERE borough IN (?, ?, ?, ?, ?)
-                                  )""",
-                            (movie_id, *padded),
+                               WHERE source = 'assemble' AND movie_id = ? AND theater_id = ?""",
+                            (movie_id, theater_id),
                         )
-                elif collected:
-                    db.execute(
-                        "DELETE FROM showtime WHERE source = 'assemble' AND movie_id = ?",
-                        (movie_id,),
-                    )
                 total += _apply(db, collected, mode="insert", now=now)
             if not failed_slugs:
                 fetched = True

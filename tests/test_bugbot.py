@@ -7,12 +7,14 @@ import base64
 from datetime import datetime, timedelta
 from pathlib import Path
 
+import httpx
 from fastapi.testclient import TestClient
 
 from moviexfone.api.app import create_app
 from moviexfone.catalog import _apply, load_theater_refs
 from moviexfone.config import Settings
 from moviexfone.db import Database
+from moviexfone.http import AllowedClient
 from moviexfone.query import search_showtimes
 from moviexfone.service import ask
 from moviexfone.sources.fetch import AssembleCityError, fetch_assemble_city
@@ -24,7 +26,9 @@ from tests.clock import NOW
 
 BROOKLYN = "alamo-drafthouse-downtown-brooklyn"
 MANHATTAN = "amc-empire-25"
-QUEENS = "amc-bay-terrace-6"
+FLUSHING = "amc-bay-terrace-6"
+ASTORIA = "regal-ua-kaufman-astoria"
+FOREST_HILLS = "regal-ua-midway"
 
 
 def _show(theater: str, starts: datetime) -> IncomingShow:
@@ -75,7 +79,7 @@ def test_failed_assemble_city_keeps_its_rows(db: Database, monkeypatch: object) 
         db,
         [
             _show(BROOKLYN, datetime(2026, 10, 16, 11, 11, tzinfo=NY)),
-            _show(QUEENS, datetime(2026, 10, 16, 11, 22, tzinfo=NY)),
+            _show(FLUSHING, datetime(2026, 10, 16, 11, 22, tzinfo=NY)),
             _show(MANHATTAN, datetime(2026, 10, 16, 18, 0, tzinfo=NY)),
         ],
         mode="insert",
@@ -114,9 +118,98 @@ def test_failed_assemble_city_keeps_its_rows(db: Database, monkeypatch: object) 
     )
     stamps = {(str(row["theater_id"]), str(row["starts_at"])) for row in rows}
     assert (BROOKLYN, "2026-10-16T11:11:00-04:00") in stamps
-    assert (QUEENS, "2026-10-16T11:22:00-04:00") in stamps
+    assert (FLUSHING, "2026-10-16T11:22:00-04:00") in stamps
     assert (MANHATTAN, "2026-10-16T18:00:00-04:00") not in stamps
     assert any(theater == MANHATTAN and "21:00" in stamp for theater, stamp in stamps)
+    status = db.query_one(
+        "SELECT checked_at FROM assemble_status WHERE movie_id = ?",
+        ("movie:verity",),
+    )
+    assert status is None
+    run = db.query_one(
+        "SELECT ok FROM ingest_run WHERE source = 'assemble' ORDER BY id DESC LIMIT 1"
+    )
+    assert run is not None and int(run["ok"]) == 0
+
+
+def test_each_200_city_replaces_only_its_theaters(db: Database) -> None:
+    """A fake client. No live HTTP.
+
+    Astoria's empty 200 clears only Astoria. Forest Hills' 200 replaces Forest
+    Hills even though Flushing returned 500 and Brooklyn's connection failed.
+    """
+    _apply(
+        db,
+        [
+            _show(BROOKLYN, datetime(2026, 10, 16, 11, 11, tzinfo=NY)),
+            _show(FLUSHING, datetime(2026, 10, 16, 11, 22, tzinfo=NY)),
+            _show(ASTORIA, datetime(2026, 10, 16, 11, 33, tzinfo=NY)),
+            _show(FOREST_HILLS, datetime(2026, 10, 16, 11, 44, tzinfo=NY)),
+            _show(MANHATTAN, datetime(2026, 10, 16, 18, 0, tzinfo=NY)),
+        ],
+        mode="insert",
+        now=NOW,
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        city = request.url.params.get("city")
+        if city == "brooklyn-ny":
+            raise httpx.ConnectError("down")
+        if city == "flushing-ny":
+            return httpx.Response(500, json={"error": "no"})
+        if city == "forest-hills-ny":
+            return httpx.Response(
+                200,
+                json={
+                    "film_id": "1283515",
+                    "screenings": [
+                        {
+                            "venue": {"name": "Regal UA Midway"},
+                            "starts_at": "2026-10-14T16:40:00-04:00",
+                            "availability": "on_sale",
+                            "url": "https://www.regmovies.com/showtimes",
+                        }
+                    ],
+                },
+            )
+        if city == "new-york-ny":
+            return httpx.Response(
+                200,
+                json={
+                    "film_id": "1283515",
+                    "screenings": [
+                        {
+                            "venue": {"name": "AMC Empire 25"},
+                            "starts_at": "2026-10-14T21:00:00-04:00",
+                            "availability": "on_sale",
+                            "url": "https://www.amctheatres.com/showtimes",
+                        }
+                    ],
+                },
+            )
+        return httpx.Response(200, json={})
+
+    client = AllowedClient({"api.assemble.film"}, transport=httpx.MockTransport(handler))
+    refresh_assemble(
+        db,
+        now=NOW + timedelta(hours=3),
+        budget=RequestBudget(),
+        client=client,
+        only_title="Verity",
+    )
+    client.close()
+    rows = db.query(
+        """SELECT theater_id, starts_at FROM showtime
+           WHERE source = 'assemble' AND movie_id = 'movie:verity'"""
+    )
+    stamps = {(str(row["theater_id"]), str(row["starts_at"])) for row in rows}
+    assert (BROOKLYN, "2026-10-16T11:11:00-04:00") in stamps
+    assert (FLUSHING, "2026-10-16T11:22:00-04:00") in stamps
+    assert (ASTORIA, "2026-10-16T11:33:00-04:00") not in stamps
+    assert (FOREST_HILLS, "2026-10-16T11:44:00-04:00") not in stamps
+    assert (FOREST_HILLS, "2026-10-14T16:40:00-04:00") in stamps
+    assert (MANHATTAN, "2026-10-16T18:00:00-04:00") not in stamps
+    assert (MANHATTAN, "2026-10-14T21:00:00-04:00") in stamps
     status = db.query_one(
         "SELECT checked_at FROM assemble_status WHERE movie_id = ?",
         ("movie:verity",),
