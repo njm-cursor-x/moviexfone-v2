@@ -1,6 +1,8 @@
-# Test and lint tools. Locally: pip install -e ".[dev]"
-# CI installs the hashed pin file instead: pip install --require-hashes -r requirements-dev.lock
-# pytest-asyncio is required; a plain `pip install -e .` does not include it.
+# Input for requirements-dev.lock. CI installs that file with --require-hashes.
+# Do not pip install -U these from a floating index in the check job.
+pip
+setuptools
+wheel
 pytest>=8.3
 pytest-asyncio>=0.24
 pytest-cov>=6
