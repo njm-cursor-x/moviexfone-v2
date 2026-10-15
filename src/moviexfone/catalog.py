@@ -345,19 +345,45 @@ def _apply(db: Database, rows: list[IncomingShow], *, mode: str, now: datetime) 
         kept = [row for row in kept if not _first_party_day(db, row)]
     if not kept:
         return 0
-    # Replace only the movie-days in this payload. An Alamo page is authoritative
-    # for those films. A short Nitehawk page must not wipe other films.
-    groups = {
-        (row.theater_id, row.movie_id, business_date(row.starts_at).isoformat()) for row in kept
-    }
-    for theater_id, movie_id, day in groups:
-        if kept[0].source == "assemble" and _first_party_day_key(db, theater_id, movie_id, day):
-            continue
-        db.execute(
-            """DELETE FROM showtime
-               WHERE theater_id = ? AND movie_id = ? AND business_date = ?""",
-            (theater_id, movie_id, day),
-        )
+    if mode == "source_theater":
+        # The payload is the whole listing for each source and theater in it.
+        # Times that disappeared are removed; other sources and theaters stay.
+        replaced: set[tuple[str, str]] = set()
+        for row in kept:
+            pair = (row.source, row.theater_id)
+            if pair in replaced:
+                continue
+            replaced.add(pair)
+            db.execute(
+                "DELETE FROM showtime WHERE source = ? AND theater_id = ?",
+                pair,
+            )
+        if all(row.source in {"alamo_json", "nitehawk_jsonld"} for row in kept):
+            for row in kept:
+                db.execute(
+                    """DELETE FROM showtime
+                       WHERE source = 'assemble' AND theater_id = ? AND movie_id = ?
+                         AND business_date = ?""",
+                    (
+                        row.theater_id,
+                        row.movie_id,
+                        business_date(row.starts_at).isoformat(),
+                    ),
+                )
+    else:
+        # Replace only the movie-days in this payload. A short page must not wipe
+        # other films, and an Assemble row must not wipe a first-party day.
+        groups = {
+            (row.theater_id, row.movie_id, business_date(row.starts_at).isoformat()) for row in kept
+        }
+        for theater_id, movie_id, day in groups:
+            if kept[0].source == "assemble" and _first_party_day_key(db, theater_id, movie_id, day):
+                continue
+            db.execute(
+                """DELETE FROM showtime
+                   WHERE theater_id = ? AND movie_id = ? AND business_date = ?""",
+                (theater_id, movie_id, day),
+            )
     fetched = iso_ny(now.astimezone(NY))
     payload = [
         (
@@ -708,6 +734,16 @@ def _fetch_retrying(
     raise last
 
 
+def replace_showtimes(db: Database, rows: list[IncomingShow], *, now: datetime) -> int:
+    """Store a successful snapshot for each source and theater in `rows`.
+
+    New showtimes are inserted. Rows from that source and theater that are not
+    in the snapshot are removed. The primary key is theater, movie, start, and
+    format, so the same showtime is one row. An empty list does not delete.
+    """
+    return _apply(db, rows, mode="source_theater", now=now)
+
+
 def refresh_live(
     db: Database,
     *,
@@ -722,7 +758,7 @@ def refresh_live(
     try:
         rows = _fetch_retrying(fetch_alamo, attempts=attempts, retry_sleep=retry_sleep)
         with db.transaction():
-            count = _apply(db, rows, mode="theaters", now=now)
+            count = replace_showtimes(db, rows, now=now)
             record_ingest(db, source="alamo_json", now=now, ok=True, showtimes=count, error=None)
         report["alamo"] = count
     except Exception as exc:
@@ -734,7 +770,7 @@ def refresh_live(
     try:
         rows = _fetch_retrying(fetch_nitehawk, attempts=attempts, retry_sleep=retry_sleep)
         with db.transaction():
-            _apply(db, rows, mode="dates", now=now)
+            replace_showtimes(db, rows, now=now)
             stored = db.query_one(
                 "SELECT COUNT(*) AS n FROM showtime WHERE source = 'nitehawk_jsonld'"
             )
@@ -756,4 +792,24 @@ def refresh_live(
         )
     restore_film_ids(db)
     _mark_coverage(db, now)
+    return report
+
+
+def populate_live(
+    db: Database,
+    *,
+    now: datetime,
+    attempts: int = 3,
+    retry_sleep: float = 1.0,
+) -> dict[str, object]:
+    """Fetch Alamo, Nitehawk, and Assemble. A failed source leaves its previous rows.
+
+    Startup calls the same fetches: Alamo and Nitehawk before the port opens, and
+    Assemble on its worker so a cold crawl does not hold the listen socket. The
+    weekday schedule calls this function on one thread.
+    """
+    report = refresh_live(db, now=now, attempts=attempts, retry_sleep=retry_sleep)
+    from moviexfone.sources.refresh import refresh_assemble
+
+    report["assemble"] = refresh_assemble(db, now=now)
     return report

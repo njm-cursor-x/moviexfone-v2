@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import time
 from datetime import datetime
 from datetime import time as clock
 
@@ -13,7 +12,6 @@ from moviexfone.config import Settings
 from moviexfone.db import Database
 from moviexfone.query import search_showtimes
 from moviexfone.sources.parse import IncomingShow
-from moviexfone.sources.refresh import FirstPartyRefresher
 from moviexfone.timeutil import NY, spoken_time
 from moviexfone.voice.loop import ToolLoop
 from tests.test_round6 import _Client, _install, _live, _run_live, _Up
@@ -171,20 +169,3 @@ def test_spoken_goodbye_is_not_repeated() -> None:
     payload = asyncio.run(run())
     assert "call.end" in payload
     assert "force_message" not in payload
-
-
-def test_first_party_refresh_runs_on_a_timer(db: Database, monkeypatch: object) -> None:
-    calls: list[datetime] = []
-
-    def fake(_db: Database, *, now: datetime) -> dict[str, object]:
-        calls.append(now)
-        return {}
-
-    monkeypatch.setattr("moviexfone.catalog.refresh_live", fake)  # type: ignore[attr-defined]
-    refresher = FirstPartyRefresher(db, interval_s=0.05)
-    refresher.start()
-    deadline = time.monotonic() + 1
-    while time.monotonic() < deadline and not calls:
-        time.sleep(0.02)
-    refresher.stop()
-    assert calls

@@ -63,7 +63,8 @@ class Settings:
         return cls(
             xai_api_key=key,
             live_voice=_flag("MOVIEXFONE_LIVE_VOICE"),
-            live_data=_flag("MOVIEXFONE_LIVE_DATA"),
+            # Unset means live. Tests and an offline demo set MOVIEXFONE_LIVE_DATA=0.
+            live_data=_flag("MOVIEXFONE_LIVE_DATA", default=True),
             tool_secret=secret,
             db_path=Path(os.environ.get("MOVIEXFONE_DB", "var/moviexfone.db")),
             data_dir=data_dir(),

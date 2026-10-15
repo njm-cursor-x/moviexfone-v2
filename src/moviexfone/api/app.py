@@ -32,7 +32,7 @@ from moviexfone.log import configure_logging
 from moviexfone.query import end_call, get_movie_info, search_showtimes
 from moviexfone.service import ask
 from moviexfone.sources.fetch import geosearch
-from moviexfone.sources.refresh import AssembleRefresher, FirstPartyRefresher, refresh_assemble
+from moviexfone.sources.refresh import AssembleRefresher, PopulationScheduler
 from moviexfone.timeutil import now_ny, resolve_when
 from moviexfone.voice.bridge import handle_voice_socket
 from moviexfone.voice.prompt import GREETING, system_prompt
@@ -50,24 +50,29 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> Any:
         db = Database(settings.db_path)
+        # Live startup loads the registry only. Fixture showtimes stay in the
+        # offline tests and in an explicit MOVIEXFONE_LIVE_DATA=0 run.
         seed(db, settings.data_dir, now=now_ny(), include_showtimes=not settings.live_data)
         from moviexfone.sources.refresh import GLOBAL_BUDGET
 
         GLOBAL_BUDGET.attach(db)
         refresher: AssembleRefresher | None = None
-        first_party: FirstPartyRefresher | None = None
+        scheduler: PopulationScheduler | None = None
         if settings.live_data:
             from moviexfone.catalog import refresh_live
 
+            # Same fetches as populate_live. Alamo and Nitehawk finish before
+            # the port opens. Assemble stays on the worker so a cold crawl
+            # does not hold the listen socket. The schedule calls populate_live.
             refresh_live(db, now=now_ny())
-            first_party = FirstPartyRefresher(db)
-            first_party.start()
             refresher = AssembleRefresher(db, ttl_seconds=settings.assemble_ttl_seconds)
             refresher.start()
+            scheduler = PopulationScheduler(db)
+            scheduler.start()
         app.state.db = db
         app.state.settings = settings
         app.state.refresher = refresher
-        app.state.first_party = first_party
+        app.state.schedule = scheduler
         from moviexfone.api.security import RateLimiter
 
         app.state.limiter = RateLimiter(settings.rate_limit_per_minute)
@@ -82,8 +87,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             yield
         finally:
-            if first_party is not None:
-                first_party.stop()
+            if scheduler is not None:
+                scheduler.stop()
             if refresher is not None:
                 refresher.stop()
             db.close()
@@ -288,10 +293,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             seed(db, settings.data_dir, now=now_ny(), include_showtimes=not settings.live_data)
         )
         if settings.live_data:
-            from moviexfone.catalog import refresh_live
+            from moviexfone.catalog import populate_live
 
-            summary["live"] = refresh_live(db, now=now_ny())
-            summary["assemble"] = refresh_assemble(db, now=now_ny())
+            report = populate_live(db, now=now_ny())
+            summary["assemble"] = report.pop("assemble")
+            summary["live"] = report
         return {"ok": True, "reloaded_fixtures": not settings.live_data, **summary}
 
     @app.websocket("/ws/voice")

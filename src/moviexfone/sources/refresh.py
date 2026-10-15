@@ -1,9 +1,13 @@
-"""Background Assemble refresh. Slow city lookups stay off the request path.
+"""Background Assemble refresh, and the weekday population schedule.
 
 The public API allows about 60 requests a minute and caches a city for about
 15 minutes. This worker stays under that ceiling and only asks again when the
 cache is stale. The bucket is per process: run one process, or one uvicorn
 worker. Several workers each keep their own bucket.
+
+Full population (Alamo, Nitehawk, Assemble) runs at startup and on Monday,
+Thursday, and Saturday at 07:00 America/New_York. There is no 45-minute timer.
+A slot that passes while the process is down is covered by the next startup.
 """
 
 from __future__ import annotations
@@ -12,6 +16,7 @@ import logging
 import queue
 import threading
 import time
+from collections.abc import Callable
 from datetime import datetime, timedelta
 
 from moviexfone.catalog import _apply, record_ingest
@@ -20,7 +25,7 @@ from moviexfone.http import AllowedClient
 from moviexfone.sources.fetch import ALL_CITIES, fetch_assemble_city, lookup_film_id
 from moviexfone.sources.fetch import _client as assemble_client
 from moviexfone.sources.parse import IncomingShow, parse_assemble
-from moviexfone.timeutil import NY
+from moviexfone.timeutil import NY, now_ny
 
 log = logging.getLogger(__name__)
 
@@ -164,6 +169,11 @@ def refresh_assemble(
                     continue
                 collected.extend(parse_assemble(payload, title=title))
             with db.transaction():
+                # This film's listings replace its previous Assemble rows, including
+                # theaters it left. Other films at those theaters stay. An empty
+                # fetch does not delete, so a failed or blank response keeps the
+                # last rows. Deleting the whole theater would drop those films:
+                # one film payload is not the theater's Assemble board.
                 if collected:
                     db.execute(
                         "DELETE FROM showtime WHERE source = 'assemble' AND movie_id = ?",
@@ -192,14 +202,57 @@ def refresh_assemble(
     return total
 
 
-class FirstPartyRefresher:
-    """Refreshes Alamo and Nitehawk on a timer. Startup alone misses a midnight rollover."""
+# Monday, Thursday, Saturday.
+_POPULATION_WEEKDAYS = frozenset({0, 3, 5})
 
-    def __init__(self, db: Database, *, interval_s: float = 45 * 60) -> None:
+
+def next_population_at(now: datetime) -> datetime:
+    """Next Monday, Thursday, or Saturday at 07:00 America/New_York strictly after `now`.
+
+    A slot equal to `now` is not returned. Startup already populated, and a
+    process that was down at 07:00 catches up on the next start, not by replaying
+    the missed slot here.
+    """
+    local = now.astimezone(NY)
+    day = local.date()
+    for offset in range(8):
+        candidate = day + timedelta(days=offset)
+        if candidate.weekday() not in _POPULATION_WEEKDAYS:
+            continue
+        slot = datetime(candidate.year, candidate.month, candidate.day, 7, 0, tzinfo=NY)
+        if slot > local:
+            return slot
+    raise RuntimeError("no population slot in the next week")
+
+
+def run_population(db: Database, *, now: datetime) -> dict[str, object]:
+    from moviexfone.catalog import populate_live
+
+    return populate_live(db, now=now)
+
+
+class PopulationScheduler:
+    """Runs startup's population on Monday, Thursday, and Saturday at 07:00 NY.
+
+    It only fires while this process is up. A missed slot is not replayed.
+    """
+
+    def __init__(
+        self,
+        db: Database,
+        *,
+        populate: Callable[..., dict[str, object]] | None = None,
+        now: Callable[[], datetime] | None = None,
+        wait: Callable[[float], bool] | None = None,
+        max_sleep: float = 30.0,
+    ) -> None:
         self._db = db
-        self._interval = interval_s
+        self._populate = populate if populate is not None else run_population
+        self._now = now if now is not None else now_ny
+        self._wait_fn = wait
+        self._max_sleep = max_sleep
         self._stop = threading.Event()
-        self._thread = threading.Thread(target=self._run, name="first-party-refresh", daemon=True)
+        self._thread = threading.Thread(target=self._run, name="population-schedule", daemon=True)
 
     def start(self) -> None:
         self._thread.start()
@@ -208,15 +261,33 @@ class FirstPartyRefresher:
         self._stop.set()
         self._thread.join(timeout=2)
 
-    def _run(self) -> None:
-        from moviexfone.catalog import refresh_live
-        from moviexfone.timeutil import now_ny
+    def _wait(self, seconds: float) -> bool:
+        if self._wait_fn is not None:
+            return self._wait_fn(seconds)
+        return self._stop.wait(seconds)
 
-        while not self._stop.wait(self._interval):
+    def _sleep_until(self, target: datetime) -> bool:
+        """Return True when `target` has arrived. Return False when stopping."""
+        while not self._stop.is_set():
+            remaining = (target - self._now()).total_seconds()
+            if remaining <= 0:
+                return True
+            step = remaining if self._wait_fn is not None else min(self._max_sleep, remaining)
+            if self._wait(step):
+                return False
+        return False
+
+    def _run(self) -> None:
+        while not self._stop.is_set():
+            target = next_population_at(self._now())
+            if not self._sleep_until(target):
+                return
+            if self._stop.is_set():
+                return
             try:
-                refresh_live(self._db, now=now_ny())
+                self._populate(self._db, now=self._now())
             except Exception as exc:
-                log.warning("first-party refresh failed: %s", type(exc).__name__)
+                log.warning("scheduled population failed: %s", type(exc).__name__)
 
 
 class AssembleRefresher:

@@ -17,7 +17,7 @@ pip install --no-deps -e .
 export XAI_API_KEY=...              # your xAI key (secret)
 export MOVIEXFONE_TOOL_SECRET=...   # random string, at least 16 bytes (secret)
 export MOVIEXFONE_LIVE_VOICE=1      # real xAI voice instead of the browser demo voice
-export MOVIEXFONE_LIVE_DATA=1       # real showtimes instead of fixtures
+export MOVIEXFONE_LIVE_DATA=1       # default; set 0 to load fixtures instead
 
 python -m moviexfone                # one process only
 ```
@@ -59,4 +59,4 @@ Round 7 on this bridge, with live xAI voice and live data:
 - Repertory houses get a coverage note instead of times. Some titles have no Assemble film id; Alamo and Nitehawk still cover the ones they publish.
 - No runtimes. Ratings and one-line blurbs come from bundled data only.
 - One live call at a time. Real phone numbers are only via Builder, and that is billed.
-- Nitehawk and Alamo refresh about every 45 minutes. Nitehawk uses the dated page for today and the next six days, so a start after midnight still asks for today.
+- Alamo, Nitehawk, and Assemble load at startup and again on Monday, Thursday, and Saturday at 07:00 America/New_York, while the process is up. A missed 07:00 is covered by the next start, not by a catch-up timer. Nitehawk uses the dated page for today and the next six days, so a start after midnight still asks for today.

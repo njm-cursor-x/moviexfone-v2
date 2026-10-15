@@ -6,6 +6,9 @@ import os
 from pathlib import Path
 
 os.environ["MOVIEXFONE_TESTCLIENT"] = "1"
+# The process default is a live fetch. Tests stay on fixtures and must not
+# call Alamo, Nitehawk, or Assemble.
+os.environ["MOVIEXFONE_LIVE_DATA"] = "0"
 
 import pytest
 
