@@ -11,7 +11,8 @@ Requirements: CPython **3.12** (the lockfile does not install on 3.11 or 3.13), 
 ```bash
 python3.12 -m venv .venv && source .venv/bin/activate
 pip install --require-hashes -r requirements.lock
-pip install --no-deps -e .
+pip install --require-hashes -r requirements-build.lock
+pip install --no-deps --no-build-isolation -e .
 
 # names only; set your own values, never commit them
 export XAI_API_KEY=...              # your xAI key (secret)

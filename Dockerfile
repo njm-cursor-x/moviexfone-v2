@@ -2,13 +2,15 @@ FROM python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0
 
 WORKDIR /app
 RUN useradd --create-home --shell /usr/sbin/nologin app
-COPY requirements.lock pyproject.toml README.md ./
+COPY requirements.lock requirements-build.lock pyproject.toml README.md ./
 COPY src ./src
 COPY data ./data
 COPY static ./static
 COPY builder ./builder
 RUN pip install --no-cache-dir --require-hashes -r requirements.lock \
-    && pip install --no-cache-dir --no-deps . \
+    && pip install --no-cache-dir --require-hashes -r requirements-build.lock \
+    && pip install --no-cache-dir --no-deps --no-build-isolation . \
+    && pip uninstall -y setuptools \
     && mkdir -p /app/var \
     && chown -R app:app /app
 USER app

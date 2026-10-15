@@ -10,11 +10,12 @@ MovieXFone is an internal codename. A live trademark (USPTO Reg. 2822672) covers
 python3.12 -m venv .venv
 source .venv/bin/activate
 pip install --require-hashes -r requirements.lock
-pip install --no-deps -e .
+pip install --require-hashes -r requirements-build.lock
+pip install --no-deps --no-build-isolation -e .
 python -m moviexfone
 ```
 
-The runtime lockfile installs on CPython 3.12. Tests and linters install from `requirements-dev.lock` with `--require-hashes`, then `pip install --no-deps --no-build-isolation -e .`.
+The runtime lockfile installs on CPython 3.12. `requirements-build.lock` is the hashed setuptools pin used to build this project with `--no-build-isolation`. Tests and linters also install `requirements-dev.lock` with `--require-hashes`.
 
 Open http://127.0.0.1:8000. Type a question, or use the mic where the browser allows it. With no API key the page is a **demo voice**: your browser speaks the `speak` line our server already trimmed. Showtimes still come from the real query layer. Live xAI voice is the other path: see `docs/DEMO.md`. The page mints a one-minute ticket and connects with `?ticket=`.
 

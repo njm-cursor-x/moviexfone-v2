@@ -285,3 +285,17 @@ def test_builder_bundle_honors_basic_auth(settings: Settings) -> None:
 def test_healthcheck_sets_a_timeout() -> None:
     text = Path("Dockerfile").read_text(encoding="utf-8")
     assert "urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)" in text
+
+
+def test_build_backend_is_the_hashed_setuptools_pin() -> None:
+    project = Path("pyproject.toml").read_text(encoding="utf-8")
+    assert 'requires = ["setuptools==84.0.0"]' in project
+    assert "setuptools>=" not in project
+    build_lock = Path("requirements-build.lock").read_text(encoding="utf-8")
+    assert "setuptools==84.0.0" in build_lock
+    assert "--hash=sha256:" in build_lock
+    for name in ("Dockerfile", ".github/workflows/ci.yml"):
+        text = Path(name).read_text(encoding="utf-8")
+        assert "requirements-build.lock" in text
+        assert "--require-hashes" in text
+        assert "--no-build-isolation" in text
